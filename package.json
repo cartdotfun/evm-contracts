@@ -1,0 +1,33 @@
+{
+    "name": "@cartdotfun/evm-contracts",
+    "version": "1.0.0",
+    "description": "Cart Protocol EVM smart contracts for M2M commerce",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/cartdotfun/evm-contracts.git"
+    },
+    "keywords": [
+        "ethereum",
+        "solidity",
+        "smart-contracts",
+        "x402",
+        "m2m",
+        "ai-agents",
+        "escrow"
+    ],
+    "scripts": {
+        "compile": "hardhat compile",
+        "test": "hardhat test",
+        "test:gas": "REPORT_GAS=true hardhat test",
+        "deploy": "hardhat run scripts/deploy.ts",
+        "deploy:sepolia": "hardhat run scripts/deploy.ts --network base-sepolia",
+        "clean": "hardhat clean"
+    },
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+        "@openzeppelin/contracts": "^5.0.0",
+        "dotenv": "^16.3.1",
+        "hardhat": "^2.22.0"
+    }
+}
