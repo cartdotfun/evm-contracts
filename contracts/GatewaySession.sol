@@ -8,39 +8,8 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-
-/**
- * @title ITrustEngine
- * @dev Interface for TrustEngine session locking functions
- */
-interface ITrustEngine {
-    function lockForSession(
-        bytes32 sessionId,
-        address agent,
-        address provider,
-        address token,
-        uint256 amount
-    ) external;
-
-    function unlockSession(bytes32 sessionId, uint256 usedAmount) external;
-
-    function getSessionInfo(
-        bytes32 sessionId
-    )
-        external
-        view
-        returns (
-            uint256 lockedAmount,
-            address agent,
-            address provider,
-            address token
-        );
-
-    function balances(
-        address user,
-        address token
-    ) external view returns (uint256);
-}
+import "./interfaces/IGatewaySession.sol";
+import "./interfaces/ITrustEngine.sol";
 
 /**
  * @title GatewaySession
@@ -48,7 +17,7 @@ interface ITrustEngine {
  *      Sessions allow agents to pre-fund API usage and settle in batches.
  *      Works with TrustEngine for balance management.
  */
-contract GatewaySession is ReentrancyGuard, Ownable {
+contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -60,34 +29,14 @@ contract GatewaySession is ReentrancyGuard, Ownable {
 
     ITrustEngine public trustEngine;
 
-    enum SessionState {
-        NONE,
-        ACTIVE,
-        SETTLED,
-        EXPIRED,
-        CANCELLED
-    }
-
-    struct Session {
-        address agent; // Paying agent
-        address provider; // Service provider (API owner)
-        address token; // Payment token (e.g., USDC)
-        uint256 depositAmount; // Initial locked amount
-        uint256 usedAmount; // Cumulative usage tracked off-chain, settled on-chain
-        uint256 createdAt;
-        uint256 expiresAt; // Session timeout
-        SessionState state;
-        string gatewaySlug; // Identifier for the gateway/API
-    }
-
     // Session storage
-    mapping(bytes32 => Session) public sessions;
+    mapping(bytes32 => Session) public override sessions;
 
     // Gateway registry: slug -> provider address
-    mapping(string => address) public gateways;
+    mapping(string => address) public override gateways;
 
     // Gateway pricing: slug -> price per request (in token units)
-    mapping(string => uint256) public gatewayPricing;
+    mapping(string => uint256) public override gatewayPricing;
 
     // Nonce for generating unique session IDs
     mapping(address => uint256) public agentNonces;

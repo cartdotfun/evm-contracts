@@ -8,12 +8,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./interfaces/ITrustEngine.sol";
 
 /**
  * @title TrustEngine
  * @dev Singleton Vault for M2M Economy. Handles internal accounting and atomic deals.
  */
-contract TrustEngine is ReentrancyGuard, Ownable {
+contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     using SafeERC20 for IERC20;
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -24,33 +25,9 @@ contract TrustEngine is ReentrancyGuard, Ownable {
 
     // Internal Accounting: User -> Token -> Balance
     // address(0) represents Native ETH
-    mapping(address => mapping(address => uint256)) public balances;
+    mapping(address => mapping(address => uint256)) public override balances;
 
-    enum DealState {
-        NONE,
-        LOCKED,
-        VERIFYING,
-        DISPUTE,
-        COMPLETED,
-        REFUNDED
-    }
-
-    struct Deal {
-        address buyer;
-        address seller;
-        address token;
-        uint256 amount;
-        DealState state;
-        string resultHash;
-        string judgmentCid;
-        uint256 createdAt;
-        uint256 expiresAt; // Time-lock for release (0 = no time-lock)
-        bytes metadata; // Flexible JSON-encoded deal-specific data
-        bytes32 parentDealId; // Parent deal (0x0 if root)
-        bytes32[] childDealIds; // Sub-deals spawned from this deal
-    }
-
-    mapping(bytes32 => Deal) public deals;
+    mapping(bytes32 => Deal) public override deals;
 
     address public arbiter;
 
@@ -68,17 +45,11 @@ contract TrustEngine is ReentrancyGuard, Ownable {
     // ═══════════════════════════════════════════════════════════════════════
 
     // Session lock tracking: sessionId -> locked amount
-    mapping(bytes32 => uint256) public sessionLocks;
+    mapping(bytes32 => uint256) public override sessionLocks;
     // Session metadata: sessionId -> (agent, provider, token)
     mapping(bytes32 => SessionInfo) public sessionInfo;
     // Authorized GatewaySession contract address
     address public gatewaySession;
-
-    struct SessionInfo {
-        address agent;
-        address provider;
-        address token;
-    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // Solana Cross-Chain Settlement Support
@@ -116,6 +87,66 @@ contract TrustEngine is ReentrancyGuard, Ownable {
         bytes32 indexed refId,
         address indexed token,
         uint256 amount
+    );
+
+    event Deposited(
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+    event Withdrawn(
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+    event DealCreated(
+        bytes32 indexed dealId,
+        address indexed buyer,
+        address indexed seller,
+        address token,
+        uint256 amount,
+        bytes32 parentDealId,
+        uint256 expiresAt
+    );
+    event DealReleased(
+        bytes32 indexed dealId,
+        address indexed seller,
+        uint256 amount
+    );
+    event DealRefunded(
+        bytes32 indexed dealId,
+        address indexed buyer,
+        uint256 amount
+    );
+    event WorkSubmitted(
+        bytes32 indexed dealId,
+        address indexed seller,
+        string resultHash
+    );
+    event DisputeRaised(bytes32 indexed dealId, address indexed raiser);
+    event DisputeResolved(
+        bytes32 indexed dealId,
+        DealState resolution,
+        string judgmentCid
+    );
+    event ChildDealCreated(
+        bytes32 indexed parentDealId,
+        bytes32 indexed childDealId,
+        address indexed seller,
+        uint256 amount
+    );
+    event GatewaySessionUpdated(address indexed newGatewaySession);
+    event SessionLocked(
+        bytes32 indexed sessionId,
+        address indexed agent,
+        address indexed provider,
+        address token,
+        uint256 amount
+    );
+    event SessionUnlocked(
+        bytes32 indexed sessionId,
+        uint256 toProvider,
+        uint256 refundedToAgent
     );
 
     constructor(address _initialOwner) Ownable(_initialOwner) {}
@@ -227,66 +258,6 @@ contract TrustEngine is ReentrancyGuard, Ownable {
         arbitrationFeeRecipient = _newRecipient;
         emit ArbitrationFeeRecipientUpdated(oldRecipient, _newRecipient);
     }
-
-    event Deposited(
-        address indexed user,
-        address indexed token,
-        uint256 amount
-    );
-    event Withdrawn(
-        address indexed user,
-        address indexed token,
-        uint256 amount
-    );
-    event DealCreated(
-        bytes32 indexed dealId,
-        address indexed buyer,
-        address indexed seller,
-        address token,
-        uint256 amount,
-        bytes32 parentDealId,
-        uint256 expiresAt
-    );
-    event DealReleased(
-        bytes32 indexed dealId,
-        address indexed seller,
-        uint256 amount
-    );
-    event DealRefunded(
-        bytes32 indexed dealId,
-        address indexed buyer,
-        uint256 amount
-    );
-    event WorkSubmitted(
-        bytes32 indexed dealId,
-        address indexed seller,
-        string resultHash
-    );
-    event DisputeRaised(bytes32 indexed dealId, address indexed raiser);
-    event DisputeResolved(
-        bytes32 indexed dealId,
-        DealState resolution,
-        string judgmentCid
-    );
-    event ChildDealCreated(
-        bytes32 indexed parentDealId,
-        bytes32 indexed childDealId,
-        address indexed seller,
-        uint256 amount
-    );
-    event GatewaySessionUpdated(address indexed newGatewaySession);
-    event SessionLocked(
-        bytes32 indexed sessionId,
-        address indexed agent,
-        address indexed provider,
-        address token,
-        uint256 amount
-    );
-    event SessionUnlocked(
-        bytes32 indexed sessionId,
-        uint256 toProvider,
-        uint256 refundedToAgent
-    );
 
     /**
      * @dev Deposit assets into internal balance.
