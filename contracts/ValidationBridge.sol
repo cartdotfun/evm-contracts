@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev ERC-8004 compliant Validation Registry Bridge
  *
  * Bridges TrustEngine deals to ERC-8004 validation pattern.
- * Enables AI arbiters to record validation results on-chain,
+ * Enables validators to record validation results on-chain,
  * with optional automatic fund release based on validation score.
  */
 contract ValidationBridge is Ownable {
@@ -29,6 +29,7 @@ contract ValidationBridge is Ownable {
         bytes32 requestHash; // Commitment hash
         uint256 requestedAt;
         address requester;
+        address validatorAddress; // Target validator
     }
 
     // Validation response record
@@ -53,7 +54,27 @@ contract ValidationBridge is Ownable {
     // agentId => list of request hashes
     mapping(uint256 => bytes32[]) public agentValidationRequests;
 
-    // Events per ERC-8004 spec
+    // ERC-8004: validatorAddress => list of request hashes
+    mapping(address => bytes32[]) public validatorRequests;
+
+    // ERC-8004 Events
+    event ValidationRequest_Event(
+        address indexed validatorAddress,
+        uint256 indexed agentId,
+        string requestUri,
+        bytes32 indexed requestHash
+    );
+
+    event ValidationResponse_Event(
+        address indexed validatorAddress,
+        uint256 indexed agentId,
+        bytes32 indexed requestHash,
+        uint8 response,
+        string responseUri,
+        bytes32 tag
+    );
+
+    // Legacy events (kept for compatibility)
     event ValidationRequested(
         address indexed validatorAddress,
         uint256 indexed agentId,
@@ -91,6 +112,13 @@ contract ValidationBridge is Ownable {
     }
 
     /**
+     * @dev Get the identity registry address (ERC-8004 required)
+     */
+    function getIdentityRegistry() external view returns (address) {
+        return identityRegistry;
+    }
+
+    /**
      * @dev Request validation for a deal
      * Called when work is submitted to TrustEngine
      * @param dealId The deal ID from TrustEngine
@@ -125,7 +153,8 @@ contract ValidationBridge is Ownable {
             requestUri: requestUri,
             requestHash: finalRequestHash,
             requestedAt: block.timestamp,
-            requester: msg.sender
+            requester: msg.sender,
+            validatorAddress: address(0)
         });
 
         dealToRequestHash[dealId] = finalRequestHash;
@@ -282,6 +311,161 @@ contract ValidationBridge is Ownable {
         uint256 agentId
     ) external view returns (bytes32[] memory) {
         return agentValidationRequests[agentId];
+    }
+
+    /**
+     * @dev Get all validation requests for a validator (ERC-8004)
+     * @param validatorAddr The validator address to query
+     */
+    function getValidatorRequests(
+        address validatorAddr
+    ) external view returns (bytes32[] memory) {
+        return validatorRequests[validatorAddr];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ERC-8004 Compliant Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Request validation (ERC-8004 compliant)
+     * Must be called by owner or operator of agentId
+     * @param validatorAddr Target validator address
+     * @param agentId Agent ID being validated
+     * @param requestUri Points to off-chain data for validation
+     * @param requestHash Commitment hash (optional for IPFS)
+     */
+    function validationRequest(
+        address validatorAddr,
+        uint256 agentId,
+        string calldata requestUri,
+        bytes32 requestHash
+    ) external {
+        require(bytes(requestUri).length > 0, "Request URI required");
+
+        // Generate request hash if not provided
+        bytes32 finalHash = requestHash;
+        if (finalHash == bytes32(0)) {
+            finalHash = keccak256(
+                abi.encodePacked(
+                    validatorAddr,
+                    agentId,
+                    requestUri,
+                    block.timestamp
+                )
+            );
+        }
+
+        require(
+            validationRequests[finalHash].requestedAt == 0,
+            "Request exists"
+        );
+
+        validationRequests[finalHash] = ValidationRequest({
+            dealId: bytes32(0),
+            agentId: agentId,
+            requestUri: requestUri,
+            requestHash: finalHash,
+            requestedAt: block.timestamp,
+            requester: msg.sender,
+            validatorAddress: validatorAddr
+        });
+
+        agentValidationRequests[agentId].push(finalHash);
+        validatorRequests[validatorAddr].push(finalHash);
+
+        emit ValidationRequest_Event(
+            validatorAddr,
+            agentId,
+            requestUri,
+            finalHash
+        );
+    }
+
+    /**
+     * @dev Respond to validation request (ERC-8004 compliant)
+     * Must be called by the validatorAddress specified in original request
+     * @param requestHash The request hash to respond to
+     * @param response Validation response 0-100
+     * @param responseUri Points to validation evidence (optional)
+     * @param responseHash Commitment hash for responseUri (optional)
+     * @param tag Custom categorization tag (optional)
+     */
+    function validationResponse(
+        bytes32 requestHash,
+        uint8 response,
+        string calldata responseUri,
+        bytes32 responseHash,
+        bytes32 tag
+    ) external {
+        ValidationRequest storage request = validationRequests[requestHash];
+        require(request.requestedAt > 0, "Request not found");
+        require(
+            request.validatorAddress == msg.sender ||
+                authorizedValidators[msg.sender],
+            "Not authorized"
+        );
+        require(response <= 100, "Response must be 0-100");
+
+        validationResponses[requestHash] = ValidationResponse({
+            score: response,
+            responseUri: responseUri,
+            responseHash: responseHash,
+            tag: tag,
+            respondedAt: block.timestamp,
+            validator: msg.sender
+        });
+
+        emit ValidationResponse_Event(
+            msg.sender,
+            request.agentId,
+            requestHash,
+            response,
+            responseUri,
+            tag
+        );
+    }
+
+    /**
+     * @dev Get aggregated validation summary for an agent (ERC-8004)
+     * @param agentId Agent ID to query
+     * @param validatorAddresses Filter by validators (empty = all)
+     * @param tag Filter by tag (bytes32(0) = all)
+     */
+    function getSummary(
+        uint256 agentId,
+        address[] calldata validatorAddresses,
+        bytes32 tag
+    ) external view returns (uint64 count, uint8 avgResponse) {
+        bytes32[] storage hashes = agentValidationRequests[agentId];
+        uint256 totalScore = 0;
+        uint64 validCount = 0;
+
+        for (uint256 i = 0; i < hashes.length; i++) {
+            ValidationResponse storage resp = validationResponses[hashes[i]];
+            if (resp.respondedAt == 0) continue;
+
+            // Filter by tag if provided
+            if (tag != bytes32(0) && resp.tag != tag) continue;
+
+            // Filter by validators if provided
+            if (validatorAddresses.length > 0) {
+                bool found = false;
+                for (uint256 j = 0; j < validatorAddresses.length; j++) {
+                    if (resp.validator == validatorAddresses[j]) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) continue;
+            }
+
+            totalScore += resp.score;
+            validCount++;
+        }
+
+        count = validCount;
+        avgResponse = validCount > 0 ? uint8(totalScore / validCount) : 0;
     }
 
     // Admin functions

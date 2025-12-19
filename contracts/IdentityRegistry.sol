@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
@@ -11,9 +11,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *
  * Each agent receives a unique AgentID (ERC-721 NFT) that maps to:
  * - Their Ethereum address
- * - An off-chain "Agent Card" containing metadata about capabilities
+ * - An off-chain registration file containing metadata about capabilities
  *
- * One agent per address enforced.
+ * Supports on-chain metadata via getMetadata/setMetadata per ERC-8004 spec.
  */
 contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
     // Counter for unique agent IDs
@@ -24,15 +24,38 @@ contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
 
     // Mapping: agentId => registration data
     struct AgentRegistration {
-        string registrationUri; // Points to off-chain Agent Card JSON
+        string registrationUri; // Points to off-chain registration JSON
         bytes32 registrationHash; // Commitment hash for data integrity
         uint256 registeredAt;
         uint256 lastUpdated;
     }
 
+    // ERC-8004: Metadata entry for registration
+    struct MetadataEntry {
+        string key;
+        bytes value;
+    }
+
     mapping(uint256 => AgentRegistration) public registrations;
 
+    // ERC-8004: On-chain metadata storage (agentId => key => value)
+    mapping(uint256 => mapping(string => bytes)) private _metadata;
+
     // Events per ERC-8004 spec
+    event Registered(
+        uint256 indexed agentId,
+        string tokenURI,
+        address indexed owner
+    );
+
+    event MetadataSet(
+        uint256 indexed agentId,
+        string indexed indexedKey,
+        string key,
+        bytes value
+    );
+
+    // Legacy event (kept for compatibility)
     event AgentRegistered(
         uint256 indexed agentId,
         address indexed owner,
@@ -48,7 +71,7 @@ contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
 
     constructor(
         address _initialOwner
-    ) ERC721("Cart.fun Agent", "AGENT") Ownable(_initialOwner) {
+    ) ERC721("Cart.fun Agent", "CART") Ownable(_initialOwner) {
         _nextAgentId = 1; // Start from 1 (0 reserved for "not registered")
     }
 
@@ -160,6 +183,141 @@ contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
      */
     function totalAgents() external view returns (uint256) {
         return _nextAgentId - 1;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ERC-8004 Registration Overloads
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Register with tokenURI and metadata entries (ERC-8004 compliant)
+     * @param _tokenURI URI pointing to off-chain registration JSON
+     * @param metadata Array of key-value metadata entries
+     * @return agentId The newly minted agent ID
+     */
+    function register(
+        string calldata _tokenURI,
+        MetadataEntry[] calldata metadata
+    ) external returns (uint256 agentId) {
+        require(addressToAgentId[msg.sender] == 0, "Already registered");
+
+        agentId = _nextAgentId++;
+        _safeMint(msg.sender, agentId);
+
+        if (bytes(_tokenURI).length > 0) {
+            _setTokenURI(agentId, _tokenURI);
+        }
+
+        addressToAgentId[msg.sender] = agentId;
+
+        registrations[agentId] = AgentRegistration({
+            registrationUri: _tokenURI,
+            registrationHash: bytes32(0),
+            registeredAt: block.timestamp,
+            lastUpdated: block.timestamp
+        });
+
+        // Set each metadata entry
+        for (uint256 i = 0; i < metadata.length; i++) {
+            _metadata[agentId][metadata[i].key] = metadata[i].value;
+            emit MetadataSet(
+                agentId,
+                metadata[i].key,
+                metadata[i].key,
+                metadata[i].value
+            );
+        }
+
+        emit Registered(agentId, _tokenURI, msg.sender);
+    }
+
+    /**
+     * @dev Register with tokenURI only (ERC-8004 compliant)
+     * @param _tokenURI URI pointing to off-chain registration JSON
+     * @return agentId The newly minted agent ID
+     */
+    function register(
+        string calldata _tokenURI
+    ) external returns (uint256 agentId) {
+        require(addressToAgentId[msg.sender] == 0, "Already registered");
+
+        agentId = _nextAgentId++;
+        _safeMint(msg.sender, agentId);
+
+        if (bytes(_tokenURI).length > 0) {
+            _setTokenURI(agentId, _tokenURI);
+        }
+
+        addressToAgentId[msg.sender] = agentId;
+
+        registrations[agentId] = AgentRegistration({
+            registrationUri: _tokenURI,
+            registrationHash: bytes32(0),
+            registeredAt: block.timestamp,
+            lastUpdated: block.timestamp
+        });
+
+        emit Registered(agentId, _tokenURI, msg.sender);
+    }
+
+    /**
+     * @dev Register without URI (can be added later with _setTokenURI)
+     * @return agentId The newly minted agent ID
+     */
+    function register() external returns (uint256 agentId) {
+        require(addressToAgentId[msg.sender] == 0, "Already registered");
+
+        agentId = _nextAgentId++;
+        _safeMint(msg.sender, agentId);
+
+        addressToAgentId[msg.sender] = agentId;
+
+        registrations[agentId] = AgentRegistration({
+            registrationUri: "",
+            registrationHash: bytes32(0),
+            registeredAt: block.timestamp,
+            lastUpdated: block.timestamp
+        });
+
+        emit Registered(agentId, "", msg.sender);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ERC-8004 Metadata Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Get on-chain metadata for an agent
+     * @param agentId The agent ID
+     * @param key The metadata key
+     * @return value The metadata value
+     */
+    function getMetadata(
+        uint256 agentId,
+        string calldata key
+    ) external view returns (bytes memory value) {
+        return _metadata[agentId][key];
+    }
+
+    /**
+     * @dev Set on-chain metadata for an agent (owner or operator only)
+     * @param agentId The agent ID
+     * @param key The metadata key
+     * @param value The metadata value to set
+     */
+    function setMetadata(
+        uint256 agentId,
+        string calldata key,
+        bytes calldata value
+    ) external {
+        require(
+            ownerOf(agentId) == msg.sender ||
+                _isAuthorized(ownerOf(agentId), msg.sender, agentId),
+            "Not authorized"
+        );
+
+        _metadata[agentId][key] = value;
+        emit MetadataSet(agentId, key, key, value);
     }
 
     // Required overrides for ERC721URIStorage

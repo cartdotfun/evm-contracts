@@ -2,7 +2,7 @@
 // @author: Lloyd Faulk <hey@cart.fun> & Opus 4.5
 // @version: 1.0.0
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
