@@ -23,6 +23,7 @@
         "test:e2e": "npx ts-node scripts/e2e-test.ts",
         "test:security": "hardhat test --grep Security",
         "inspect": "npx ts-node scripts/inspect-trustengine.ts",
+        "manage": "npx ts-node scripts/manage.ts",
         "deploy": "hardhat run scripts/deploy.ts",
         "deploy:sepolia": "hardhat run scripts/deploy.ts --network base-sepolia",
         "update-addresses": "./scripts/update-addresses.sh",
