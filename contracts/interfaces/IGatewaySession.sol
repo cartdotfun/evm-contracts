@@ -123,4 +123,8 @@ interface IGatewaySession {
     function gatewayPricing(
         string calldata slug
     ) external view returns (uint256);
+
+    function getActiveSessions(
+        address _provider
+    ) external view returns (bytes32[] memory);
 }

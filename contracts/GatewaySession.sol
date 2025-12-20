@@ -44,6 +44,11 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
     // Track active sessions per provider to prevent gateway deactivation with active sessions
     mapping(address => uint256) public activeSessionsByProvider;
 
+    // Track session IDs per provider (for getActiveSessions query)
+    mapping(address => bytes32[]) private providerSessions;
+    // Index of session in providerSessions array (for efficient removal)
+    mapping(bytes32 => uint256) private sessionIndex;
+
     // Events
     event TrustEngineUpdated(address indexed newTrustEngine);
     event GatewayRegistered(
@@ -215,6 +220,10 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
         // Track active session for provider (prevent gateway deactivation)
         activeSessionsByProvider[provider]++;
 
+        // Track session ID for getActiveSessions query
+        sessionIndex[sessionId] = providerSessions[provider].length;
+        providerSessions[provider].push(sessionId);
+
         // Lock funds in TrustEngine
         trustEngine.lockForSession(
             sessionId,
@@ -286,6 +295,9 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
             activeSessionsByProvider[session.provider]--;
         }
 
+        // Remove session from provider's session list
+        _removeSessionFromProvider(session.provider, _sessionId);
+
         // Interactions: Unlock in TrustEngine
         trustEngine.unlockSession(_sessionId, session.usedAmount);
 
@@ -310,6 +322,9 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
         if (activeSessionsByProvider[session.provider] > 0) {
             activeSessionsByProvider[session.provider]--;
         }
+
+        // Remove session from provider's session list
+        _removeSessionFromProvider(session.provider, _sessionId);
 
         // Interactions: Full refund to agent
         trustEngine.unlockSession(_sessionId, 0);
@@ -405,5 +420,41 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
         string calldata _slug
     ) external view returns (address provider, uint256 pricePerRequest) {
         return (gateways[_slug], gatewayPricing[_slug]);
+    }
+
+    /**
+     * @dev Get all active session IDs for a provider
+     * @param _provider Provider address
+     * @return sessionIds Array of active session IDs
+     */
+    function getActiveSessions(
+        address _provider
+    ) external view returns (bytes32[] memory) {
+        return providerSessions[_provider];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Internal Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Remove a session from provider's session list (swap and pop)
+     */
+    function _removeSessionFromProvider(
+        address _provider,
+        bytes32 _sessionId
+    ) internal {
+        bytes32[] storage sessions_ = providerSessions[_provider];
+        uint256 index = sessionIndex[_sessionId];
+        uint256 lastIndex = sessions_.length - 1;
+
+        if (index != lastIndex) {
+            bytes32 lastSessionId = sessions_[lastIndex];
+            sessions_[index] = lastSessionId;
+            sessionIndex[lastSessionId] = index;
+        }
+
+        sessions_.pop();
+        delete sessionIndex[_sessionId];
     }
 }
