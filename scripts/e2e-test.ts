@@ -89,27 +89,65 @@ interface TestResult {
 
 class E2ETestRunner {
     private publicClient
-    private walletClient
-    private account
+    private ownerWalletClient
+    private agentWalletClient
+    private providerWalletClient
+    private ownerAccount
+    private agentAccount
+    private providerAccount
     private results: TestResult[] = []
+    private isMultiParty: boolean
 
     constructor() {
-        const privateKey = process.env.PRIVATE_KEY
-        if (!privateKey) throw new Error('PRIVATE_KEY not set in .env')
+        const ownerKey = process.env.PRIVATE_KEY
+        if (!ownerKey) throw new Error('PRIVATE_KEY not set in .env')
 
-        this.account = privateKeyToAccount(privateKey.startsWith('0x') ? privateKey as `0x${string}` : `0x${privateKey}`)
+        const agentKey = process.env.PRIVATE_KEY_AGENT
+        const providerKey = process.env.PRIVATE_KEY_PROVIDER
+
+        // Check if multi-party mode is enabled
+        this.isMultiParty = !!(agentKey && providerKey)
+
+        this.ownerAccount = privateKeyToAccount(ownerKey.startsWith('0x') ? ownerKey as `0x${string}` : `0x${ownerKey}`)
+
+        // In multi-party mode, use separate wallets; otherwise use owner for all roles
+        this.agentAccount = agentKey
+            ? privateKeyToAccount(agentKey.startsWith('0x') ? agentKey as `0x${string}` : `0x${agentKey}`)
+            : this.ownerAccount
+
+        this.providerAccount = providerKey
+            ? privateKeyToAccount(providerKey.startsWith('0x') ? providerKey as `0x${string}` : `0x${providerKey}`)
+            : this.ownerAccount
+
+        const transport = http(process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org')
 
         this.publicClient = createPublicClient({
             chain: baseSepolia,
-            transport: http(process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org'),
+            transport,
         })
 
-        this.walletClient = createWalletClient({
-            account: this.account,
+        this.ownerWalletClient = createWalletClient({
+            account: this.ownerAccount,
             chain: baseSepolia,
-            transport: http(process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org'),
+            transport,
+        })
+
+        this.agentWalletClient = createWalletClient({
+            account: this.agentAccount,
+            chain: baseSepolia,
+            transport,
+        })
+
+        this.providerWalletClient = createWalletClient({
+            account: this.providerAccount,
+            chain: baseSepolia,
+            transport,
         })
     }
+
+    // Helper to get wallet client (for backward compat, returns owner)
+    get walletClient() { return this.ownerWalletClient }
+    get account() { return this.ownerAccount }
 
     async runTest(name: string, testFn: () => Promise<void>) {
         const start = Date.now()
@@ -229,44 +267,61 @@ class E2ETestRunner {
     async testFullSessionLifecycle() {
         console.log('\n🔄 3. Full Session Lifecycle Test (requires USDC)')
 
+        if (this.isMultiParty) {
+            console.log('  📌 Multi-party mode enabled:')
+            console.log(`    Agent:    ${this.agentAccount.address}`)
+            console.log(`    Provider: ${this.providerAccount.address}`)
+        } else {
+            console.log('  📌 Single-party mode (set PRIVATE_KEY_AGENT & PRIVATE_KEY_PROVIDER for multi-party)')
+        }
+
         const testSlug = `e2e-test-${Date.now()}`
         const pricePerRequest = parseUnits('0.001', 6) // $0.001
         const depositAmount = parseUnits('0.01', 6) // $0.01
         const usageAmount = parseUnits('0.005', 6) // $0.005
         let sessionId: `0x${string}` | null = null
 
-        // Check if we have enough funds
-        const walletBalance = await this.publicClient.readContract({
+        // Show initial balances
+        const agentWalletBalance = await this.publicClient.readContract({
             address: CONTRACTS.USDC,
             abi: ERC20_ABI,
             functionName: 'balanceOf',
-            args: [this.account.address],
+            args: [this.agentAccount.address],
         })
-
-        const trustBalance = await this.publicClient.readContract({
+        const agentTrustBalance = await this.publicClient.readContract({
             address: CONTRACTS.TRUST_ENGINE,
             abi: TRUST_ENGINE_ABI,
             functionName: 'balances',
-            args: [this.account.address, CONTRACTS.USDC],
+            args: [this.agentAccount.address, CONTRACTS.USDC],
+        })
+        const providerTrustBalance = await this.publicClient.readContract({
+            address: CONTRACTS.TRUST_ENGINE,
+            abi: TRUST_ENGINE_ABI,
+            functionName: 'balances',
+            args: [this.providerAccount.address, CONTRACTS.USDC],
         })
 
-        if (trustBalance < depositAmount && walletBalance < depositAmount) {
-            console.log(`    ⚠️  Skipping write tests - insufficient USDC (need ${formatUnits(depositAmount, 6)})`)
-            console.log(`    Wallet: ${formatUnits(walletBalance, 6)} USDC, TrustEngine: ${formatUnits(trustBalance, 6)} USDC`)
+        console.log('\n  📊 Initial Balances:')
+        console.log(`    Agent wallet USDC:    ${formatUnits(agentWalletBalance, 6)}`)
+        console.log(`    Agent TrustEngine:    ${formatUnits(agentTrustBalance, 6)}`)
+        console.log(`    Provider TrustEngine: ${formatUnits(providerTrustBalance, 6)}`)
+
+        if (agentTrustBalance < depositAmount && agentWalletBalance < depositAmount) {
+            console.log(`\n    ⚠️  Skipping write tests - Agent needs USDC (need ${formatUnits(depositAmount, 6)})`)
             return
         }
 
-        // Step 1: Approve USDC if needed
-        await this.runTest('Approve USDC for TrustEngine', async () => {
+        // Step 1: Agent approves USDC if needed
+        await this.runTest('[Agent] Approve USDC for TrustEngine', async () => {
             const allowance = await this.publicClient.readContract({
                 address: CONTRACTS.USDC,
                 abi: ERC20_ABI,
                 functionName: 'allowance',
-                args: [this.account.address, CONTRACTS.TRUST_ENGINE],
+                args: [this.agentAccount.address, CONTRACTS.TRUST_ENGINE],
             })
 
             if (allowance < depositAmount) {
-                const hash = await this.walletClient.writeContract({
+                const hash = await this.agentWalletClient.writeContract({
                     address: CONTRACTS.USDC,
                     abi: ERC20_ABI,
                     functionName: 'approve',
@@ -279,17 +334,17 @@ class E2ETestRunner {
             }
         })
 
-        // Step 2: Deposit to TrustEngine if needed
-        await this.runTest('Deposit USDC to TrustEngine', async () => {
+        // Step 2: Agent deposits to TrustEngine if needed
+        await this.runTest('[Agent] Deposit USDC to TrustEngine', async () => {
             const currentBalance = await this.publicClient.readContract({
                 address: CONTRACTS.TRUST_ENGINE,
                 abi: TRUST_ENGINE_ABI,
                 functionName: 'balances',
-                args: [this.account.address, CONTRACTS.USDC],
+                args: [this.agentAccount.address, CONTRACTS.USDC],
             })
 
             if (currentBalance < depositAmount) {
-                const hash = await this.walletClient.writeContract({
+                const hash = await this.agentWalletClient.writeContract({
                     address: CONTRACTS.TRUST_ENGINE,
                     abi: TRUST_ENGINE_ABI,
                     functionName: 'deposit',
@@ -302,9 +357,9 @@ class E2ETestRunner {
             }
         })
 
-        // Step 3: Register Gateway
-        await this.runTest('Register new gateway', async () => {
-            const hash = await this.walletClient.writeContract({
+        // Step 3: Provider registers Gateway
+        await this.runTest('[Provider] Register new gateway', async () => {
+            const hash = await this.providerWalletClient.writeContract({
                 address: CONTRACTS.GATEWAY_SESSION,
                 abi: GATEWAY_SESSION_ABI,
                 functionName: 'registerGateway',
@@ -312,11 +367,10 @@ class E2ETestRunner {
             })
             await this.publicClient.waitForTransactionReceipt({ hash })
             console.log(`    Slug: ${testSlug}, Tx: ${hash}`)
-            // Wait for RPC propagation
             await delay(RPC_DELAY)
         })
 
-        // Step 4: Verify gateway registered
+        // Step 4: Verify gateway registered to Provider
         await this.runTest('Verify gateway registration', async () => {
             const provider = await this.publicClient.readContract({
                 address: CONTRACTS.GATEWAY_SESSION,
@@ -325,14 +379,14 @@ class E2ETestRunner {
                 args: [testSlug],
             })
             console.log(`    Provider from chain: ${provider}`)
-            if (provider.toLowerCase() !== this.account.address.toLowerCase()) {
-                throw new Error(`Gateway not registered to us: ${provider}`)
+            if (provider.toLowerCase() !== this.providerAccount.address.toLowerCase()) {
+                throw new Error(`Gateway not registered to provider: ${provider}`)
             }
         })
 
-        // Step 5: Open Session
-        await this.runTest('Open session', async () => {
-            const hash = await this.walletClient.writeContract({
+        // Step 5: Agent opens Session
+        await this.runTest('[Agent] Open session', async () => {
+            const hash = await this.agentWalletClient.writeContract({
                 address: CONTRACTS.GATEWAY_SESSION,
                 abi: GATEWAY_SESSION_ABI,
                 functionName: 'openSession',
@@ -340,9 +394,8 @@ class E2ETestRunner {
             })
             const receipt = await this.publicClient.waitForTransactionReceipt({ hash })
 
-            // Extract sessionId from first log's first indexed topic (sessionId is indexed)
+            // Extract sessionId from first log's first indexed topic
             for (const log of receipt.logs) {
-                // The SessionOpened event has sessionId as first indexed param
                 if (log.address.toLowerCase() === CONTRACTS.GATEWAY_SESSION.toLowerCase() && log.topics.length >= 2) {
                     sessionId = log.topics[1] as `0x${string}`
                     break
@@ -350,7 +403,6 @@ class E2ETestRunner {
             }
 
             console.log(`    SessionId: ${sessionId}, Tx: ${hash}`)
-            // Wait for RPC propagation
             await delay(RPC_DELAY)
         })
 
@@ -371,9 +423,9 @@ class E2ETestRunner {
             if (!isValid) throw new Error('Session not valid')
         })
 
-        // Step 7: Record Usage (we are the provider since we registered the gateway)
-        await this.runTest('Record usage', async () => {
-            const hash = await this.walletClient.writeContract({
+        // Step 7: Provider records usage
+        await this.runTest('[Provider] Record usage', async () => {
+            const hash = await this.providerWalletClient.writeContract({
                 address: CONTRACTS.GATEWAY_SESSION,
                 abi: GATEWAY_SESSION_ABI,
                 functionName: 'recordUsage',
@@ -400,9 +452,9 @@ class E2ETestRunner {
             }
         })
 
-        // Step 9: Settle Session
+        // Step 9: Settle Session (anyone can settle)
         await this.runTest('Settle session', async () => {
-            const hash = await this.walletClient.writeContract({
+            const hash = await this.agentWalletClient.writeContract({
                 address: CONTRACTS.GATEWAY_SESSION,
                 abi: GATEWAY_SESSION_ABI,
                 functionName: 'settleSession',
@@ -410,7 +462,6 @@ class E2ETestRunner {
             })
             await this.publicClient.waitForTransactionReceipt({ hash })
             console.log(`    Tx: ${hash}`)
-            // Wait for RPC propagation
             await delay(RPC_DELAY)
         })
 
@@ -425,6 +476,36 @@ class E2ETestRunner {
             console.log(`    isSessionValid after settle: ${isValid}`)
             if (isValid) throw new Error('Session should no longer be valid')
         })
+
+        // Show final balances
+        const finalAgentBalance = await this.publicClient.readContract({
+            address: CONTRACTS.TRUST_ENGINE,
+            abi: TRUST_ENGINE_ABI,
+            functionName: 'balances',
+            args: [this.agentAccount.address, CONTRACTS.USDC],
+        })
+        const finalProviderBalance = await this.publicClient.readContract({
+            address: CONTRACTS.TRUST_ENGINE,
+            abi: TRUST_ENGINE_ABI,
+            functionName: 'balances',
+            args: [this.providerAccount.address, CONTRACTS.USDC],
+        })
+        const feeRecipient = await this.publicClient.readContract({
+            address: CONTRACTS.TRUST_ENGINE,
+            abi: TRUST_ENGINE_ABI,
+            functionName: 'protocolFeeRecipient',
+        })
+        const feeRecipientBalance = await this.publicClient.readContract({
+            address: CONTRACTS.TRUST_ENGINE,
+            abi: TRUST_ENGINE_ABI,
+            functionName: 'balances',
+            args: [feeRecipient, CONTRACTS.USDC],
+        })
+
+        console.log('\n  📊 Final Balances:')
+        console.log(`    Agent TrustEngine:    ${formatUnits(finalAgentBalance, 6)} USDC (Δ ${formatUnits(finalAgentBalance - agentTrustBalance, 6)})`)
+        console.log(`    Provider TrustEngine: ${formatUnits(finalProviderBalance, 6)} USDC (Δ ${formatUnits(finalProviderBalance - providerTrustBalance, 6)})`)
+        console.log(`    Fee Recipient:        ${formatUnits(feeRecipientBalance, 6)} USDC`)
     }
 
     // ═══════════════════════════════════════════════════════════════════════

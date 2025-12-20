@@ -33,6 +33,9 @@ EVM smart contracts for Cart Protocol's Machine 2 Machine (M2M) commerce infrast
 | **ReputationRegistry** | On-chain feedback and reputation aggregation. Tracks scores per agent, per skill tag, with ERC-8004 compliant signature-authorized feedback. |
 | **ValidationBridge** | Connects TrustEngine deals to ERC-8004 validation pattern. Enables AI arbiters to validate work and trigger conditional fund release based on validation scores. |
 
+> [!CAUTION]
+> **Do NOT send tokens directly to TrustEngine.** Always use `deposit()` to add funds. Tokens sent directly to the contract address are **permanently unrecoverable** - this is intentional to keep the protocol trustless (no admin sweep function exists).
+
 ## Quick Start
 
 ```bash
