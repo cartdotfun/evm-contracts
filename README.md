@@ -1,6 +1,6 @@
 # Cart Protocol - EVM Contracts
 
-Smart contracts for Cart Protocol's M2M commerce infrastructure on EVM chains.
+EVM smart contracts for Cart Protocol's Machine 2 Machine (M2M) commerce infrastructure.
 
 ## Architecture
 

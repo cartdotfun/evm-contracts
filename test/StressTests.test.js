@@ -379,7 +379,7 @@ describe("Stress Tests: TrustEngine & GatewaySession", function () {
                 agents[0].address,
                 providers[0].address,
                 amount
-            )).to.be.revertedWith("Already processed");
+            )).to.be.revertedWithCustomError(trustEngine, "AlreadyProcessed");
 
             console.log(`    ✓ Replay attack prevention working`);
         });
