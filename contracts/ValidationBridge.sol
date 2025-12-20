@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./interfaces/IValidationBridge.sol";
 
 /**
  * @title ValidationBridge
@@ -11,7 +12,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * Enables validators to record validation results on-chain,
  * with optional automatic fund release based on validation score.
  */
-contract ValidationBridge is Ownable {
+contract ValidationBridge is Ownable, IValidationBridge {
     // Reference to TrustEngine
     address public trustEngine;
 
@@ -56,23 +57,6 @@ contract ValidationBridge is Ownable {
 
     // ERC-8004: validatorAddress => list of request hashes
     mapping(address => bytes32[]) public validatorRequests;
-
-    // ERC-8004 Events
-    event ValidationRequest_Event(
-        address indexed validatorAddress,
-        uint256 indexed agentId,
-        string requestUri,
-        bytes32 indexed requestHash
-    );
-
-    event ValidationResponse_Event(
-        address indexed validatorAddress,
-        uint256 indexed agentId,
-        bytes32 indexed requestHash,
-        uint8 response,
-        string responseUri,
-        bytes32 tag
-    );
 
     // Legacy events (kept for compatibility)
     event ValidationRequested(
@@ -374,7 +358,7 @@ contract ValidationBridge is Ownable {
         agentValidationRequests[agentId].push(finalHash);
         validatorRequests[validatorAddr].push(finalHash);
 
-        emit ValidationRequest_Event(
+        emit ValidationRequestEvent(
             validatorAddr,
             agentId,
             requestUri,
@@ -416,7 +400,7 @@ contract ValidationBridge is Ownable {
             validator: msg.sender
         });
 
-        emit ValidationResponse_Event(
+        emit ValidationResponseEvent(
             msg.sender,
             request.agentId,
             requestHash,

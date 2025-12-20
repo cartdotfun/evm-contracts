@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./interfaces/IIdentityRegistry.sol";
 
 /**
  * @title IdentityRegistry
@@ -15,7 +16,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *
  * Supports on-chain metadata via getMetadata/setMetadata per ERC-8004 spec.
  */
-contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
+contract IdentityRegistry is
+    ERC721,
+    ERC721URIStorage,
+    Ownable,
+    IIdentityRegistry
+{
     // Counter for unique agent IDs
     uint256 private _nextAgentId;
 
@@ -30,30 +36,10 @@ contract IdentityRegistry is ERC721, ERC721URIStorage, Ownable {
         uint256 lastUpdated;
     }
 
-    // ERC-8004: Metadata entry for registration
-    struct MetadataEntry {
-        string key;
-        bytes value;
-    }
-
     mapping(uint256 => AgentRegistration) public registrations;
 
     // ERC-8004: On-chain metadata storage (agentId => key => value)
     mapping(uint256 => mapping(string => bytes)) private _metadata;
-
-    // Events per ERC-8004 spec
-    event Registered(
-        uint256 indexed agentId,
-        string tokenURI,
-        address indexed owner
-    );
-
-    event MetadataSet(
-        uint256 indexed agentId,
-        string indexed indexedKey,
-        string key,
-        bytes value
-    );
 
     // Legacy event (kept for compatibility)
     event AgentRegistered(

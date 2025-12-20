@@ -3,11 +3,9 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-
-// Interface for IdentityRegistry ownership check
-interface IIdentityRegistry {
-    function ownerOf(uint256 agentId) external view returns (address);
-}
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "./interfaces/IIdentityRegistry.sol";
+import "./interfaces/IReputationRegistry.sol";
 
 /**
  * @title ReputationRegistry
@@ -18,7 +16,7 @@ interface IIdentityRegistry {
  * - Simple postFeedback (anyone can post)
  * - ERC-8004 giveFeedback (requires agent signature authorization)
  */
-contract ReputationRegistry is Ownable {
+contract ReputationRegistry is Ownable, IReputationRegistry {
     // Reference to IdentityRegistry
     address public identityRegistry;
 
@@ -70,32 +68,7 @@ contract ReputationRegistry is Ownable {
         bytes32 dealId
     );
 
-    // ERC-8004 event for giveFeedback
-    event NewFeedback(
-        uint256 indexed agentId,
-        address indexed clientAddress,
-        uint8 score,
-        bytes32 tag1,
-        bytes32 tag2,
-        string fileuri,
-        bytes32 filehash
-    );
-
-    // ERC-8004 event for revokeFeedback
-    event FeedbackRevoked(
-        uint256 indexed agentId,
-        address indexed clientAddress,
-        uint64 indexed feedbackIndex
-    );
-
-    // ERC-8004 event for appendResponse
-    event ResponseAppended(
-        uint256 indexed agentId,
-        address indexed clientAddress,
-        uint64 feedbackIndex,
-        address indexed responder,
-        string responseUri
-    );
+    // Note: NewFeedback, FeedbackRevoked, ResponseAppended are inherited from IReputationRegistry
 
     // ERC-8004: Track revoked feedback (agentId => clientAddress => feedbackIndex => isRevoked)
     mapping(uint256 => mapping(address => mapping(uint64 => bool)))
@@ -339,7 +312,7 @@ contract ReputationRegistry is Ownable {
             "Index limit reached"
         );
         require(
-            signer == IIdentityRegistry(identityRegistry).ownerOf(agentId),
+            signer == IERC721(identityRegistry).ownerOf(agentId),
             "Invalid signer"
         );
 
