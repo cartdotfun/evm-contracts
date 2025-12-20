@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-// @author: Lloyd Faulk <hey@cart.fun> & Opus 4.5
+// @author: Lloyd Faulk
+// @author: Opus 4.5
+// @contact: lloydfaulk@gmail.com
 // @version: 1.0.0
 
 pragma solidity ^0.8.24;
@@ -161,7 +163,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      * @param _relay Address authorized to submit Solana settlements
      */
     function setSolanaRelay(address _relay) external onlyOwner {
-        require(_relay != address(0), "Invalid relay address");
+        if (_relay == address(0)) revert InvalidAddress();
         solanaRelay = _relay;
         emit SolanaRelayUpdated(_relay);
     }
@@ -188,13 +190,11 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         address _provider,
         uint256 _amount
     ) external nonReentrant {
-        require(msg.sender == solanaRelay, "Only Solana relay");
-        require(!processedSolanaSettlements[_sessionId], "Already processed");
-        require(solanaSessionToken != address(0), "Token not configured");
-        require(
-            balances[_agent][solanaSessionToken] >= _amount,
-            "Insufficient agent balance"
-        );
+        if (msg.sender != solanaRelay) revert Unauthorized();
+        if (processedSolanaSettlements[_sessionId]) revert AlreadyProcessed();
+        if (solanaSessionToken == address(0)) revert TokenNotConfigured();
+        if (balances[_agent][solanaSessionToken] < _amount)
+            revert InsufficientBalance();
 
         // Mark as processed to prevent replay
         processedSolanaSettlements[_sessionId] = true;
@@ -220,7 +220,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      * @param _newFeeBps New fee in basis points (10 = 0.1%, 100 = 1%)
      */
     function setProtocolFee(uint256 _newFeeBps) external onlyOwner {
-        require(_newFeeBps <= 1000, "Fee too high"); // Max 10%
+        if (_newFeeBps > 1000) revert FeeTooHigh();
         uint256 oldFeeBps = protocolFeeBps;
         protocolFeeBps = _newFeeBps;
         emit ProtocolFeeUpdated(oldFeeBps, _newFeeBps);
@@ -230,7 +230,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      * @dev Update protocol fee recipient (only owner)
      */
     function setProtocolFeeRecipient(address _newRecipient) external onlyOwner {
-        require(_newRecipient != address(0), "Invalid recipient");
+        if (_newRecipient == address(0)) revert InvalidAddress();
         address oldRecipient = protocolFeeRecipient;
         protocolFeeRecipient = _newRecipient;
         emit ProtocolFeeRecipientUpdated(oldRecipient, _newRecipient);
@@ -241,7 +241,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      * @param _newFeeBps New fee in basis points (300 = 3%)
      */
     function setArbitrationFee(uint256 _newFeeBps) external onlyOwner {
-        require(_newFeeBps <= 1000, "Fee too high"); // Max 10%
+        if (_newFeeBps > 1000) revert FeeTooHigh();
         uint256 oldFeeBps = arbitrationFeeBps;
         arbitrationFeeBps = _newFeeBps;
         emit ArbitrationFeeUpdated(oldFeeBps, _newFeeBps);
@@ -253,7 +253,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     function setArbitrationFeeRecipient(
         address _newRecipient
     ) external onlyOwner {
-        require(_newRecipient != address(0), "Invalid recipient");
+        if (_newRecipient == address(0)) revert InvalidAddress();
         address oldRecipient = arbitrationFeeRecipient;
         arbitrationFeeRecipient = _newRecipient;
         emit ArbitrationFeeRecipientUpdated(oldRecipient, _newRecipient);
@@ -268,12 +268,12 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         address _token,
         uint256 _amount
     ) external payable nonReentrant {
-        require(_amount > 0, "Amount must be > 0");
+        if (_amount == 0) revert InvalidAmount();
 
         if (_token == address(0)) {
-            require(msg.value == _amount, "ETH amount mismatch");
+            if (msg.value != _amount) revert EthMismatch();
         } else {
-            require(msg.value == 0, "Do not send ETH with ERC20 deposit");
+            if (msg.value != 0) revert NoEthForERC20();
             IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
         }
 
@@ -287,16 +287,14 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      * @param _amount Amount to withdraw
      */
     function withdraw(address _token, uint256 _amount) external nonReentrant {
-        require(
-            balances[msg.sender][_token] >= _amount,
-            "Insufficient internal balance"
-        );
+        if (balances[msg.sender][_token] < _amount)
+            revert InsufficientBalance();
 
         balances[msg.sender][_token] -= _amount;
 
         if (_token == address(0)) {
             (bool sent, ) = payable(msg.sender).call{value: _amount}("");
-            require(sent, "ETH transfer failed");
+            if (!sent) revert EthTransferFailed();
         } else {
             IERC20(_token).safeTransfer(msg.sender, _amount);
         }
@@ -323,34 +321,25 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         bytes32 _parentDealId,
         uint256 _expiresAt
     ) external nonReentrant {
-        require(deals[_dealId].state == DealState.NONE, "Deal already exists");
-        require(
-            balances[msg.sender][_token] >= _amount,
-            "Insufficient internal balance"
-        );
-        require(_amount > 0, "Amount must be > 0");
-        require(_seller != address(0), "Invalid seller");
-        require(_metadata.length <= MAX_METADATA_SIZE, "Metadata too large");
+        if (deals[_dealId].state != DealState.NONE) revert DealAlreadyExists();
+        if (balances[msg.sender][_token] < _amount)
+            revert InsufficientBalance();
+        if (_amount == 0) revert InvalidAmount();
+        if (_seller == address(0)) revert InvalidAddress();
+        if (_metadata.length > MAX_METADATA_SIZE) revert MetadataTooLarge();
 
         // If parent specified, validate it exists and is owned by buyer
         if (_parentDealId != bytes32(0)) {
-            require(
-                deals[_parentDealId].state != DealState.NONE,
-                "Parent deal does not exist"
-            );
-            require(
-                deals[_parentDealId].buyer == msg.sender,
-                "Not authorized to create child deal"
-            );
-            require(
-                deals[_parentDealId].childDealIds.length < MAX_CHILD_DEALS,
-                "Max child deals reached"
-            );
+            if (deals[_parentDealId].state == DealState.NONE)
+                revert DealNotFound();
+            if (deals[_parentDealId].buyer != msg.sender) revert Unauthorized();
+            if (deals[_parentDealId].childDealIds.length >= MAX_CHILD_DEALS)
+                revert MaxChildDealsReached();
         }
 
         // Validate expiry time if specified
         if (_expiresAt > 0) {
-            require(_expiresAt > block.timestamp, "Expiry must be in future");
+            if (_expiresAt <= block.timestamp) revert ExpiryMustBeFuture();
         }
 
         // Lock funds (deduct from buyer's internal balance)
@@ -401,8 +390,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         string calldata _resultHash
     ) external nonReentrant {
         Deal storage deal = deals[_dealId];
-        require(deal.state == DealState.LOCKED, "Invalid deal state");
-        require(msg.sender == deal.seller, "Not authorized");
+        if (deal.state != DealState.LOCKED) revert InvalidDealState();
+        if (msg.sender != deal.seller) revert Unauthorized();
 
         deal.resultHash = _resultHash;
         deal.state = DealState.VERIFYING;
@@ -416,14 +405,10 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      */
     function raiseDispute(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
-        require(
-            deal.state == DealState.LOCKED || deal.state == DealState.VERIFYING,
-            "Invalid deal state"
-        );
-        require(
-            msg.sender == deal.buyer || msg.sender == deal.seller,
-            "Not authorized"
-        );
+        if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
+            revert InvalidDealState();
+        if (msg.sender != deal.buyer && msg.sender != deal.seller)
+            revert Unauthorized();
 
         deal.state = DealState.DISPUTE;
         emit DisputeRaised(_dealId, msg.sender);
@@ -440,9 +425,9 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         string calldata _judgmentCid
     ) external nonReentrant {
         Deal storage deal = deals[_dealId];
-        require(deal.state == DealState.DISPUTE, "Invalid deal state");
+        if (deal.state != DealState.DISPUTE) revert InvalidDealState();
         // Only Arbiter can resolve disputes
-        require(msg.sender == arbiter, "Not authorized: Arbiter only");
+        if (msg.sender != arbiter) revert Unauthorized();
 
         deal.judgmentCid = _judgmentCid;
 
@@ -465,24 +450,18 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      */
     function release(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
-        require(
-            deal.state == DealState.LOCKED || deal.state == DealState.VERIFYING,
-            "Invalid deal state"
-        );
+        if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
+            revert InvalidDealState();
         // Buyer, Arbiter, or ValidationBridge can release
-        require(
-            msg.sender == deal.buyer ||
-                msg.sender == arbiter ||
-                msg.sender == validationBridge,
-            "Not authorized"
-        );
+        if (
+            msg.sender != deal.buyer &&
+            msg.sender != arbiter &&
+            msg.sender != validationBridge
+        ) revert Unauthorized();
 
         // Enforce time-lock if specified
         if (deal.expiresAt > 0) {
-            require(
-                block.timestamp >= deal.expiresAt,
-                "Deal is time-locked, cannot release yet"
-            );
+            if (block.timestamp < deal.expiresAt) revert DealTimeLocked();
         }
 
         deal.state = DealState.COMPLETED;
@@ -499,12 +478,10 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
      */
     function refund(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
-        require(
-            deal.state == DealState.LOCKED || deal.state == DealState.VERIFYING,
-            "Invalid deal state"
-        );
+        if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
+            revert InvalidDealState();
         // Only Seller can refund (TODO: Add Arbiter)
-        require(msg.sender == deal.seller, "Not authorized");
+        if (msg.sender != deal.seller) revert Unauthorized();
 
         deal.state = DealState.REFUNDED;
 
@@ -573,11 +550,11 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         address _token,
         uint256 _amount
     ) external nonReentrant {
-        require(msg.sender == gatewaySession, "Only GatewaySession can lock");
-        require(sessionLocks[_sessionId] == 0, "Session already exists");
-        require(balances[_agent][_token] >= _amount, "Insufficient balance");
-        require(_amount > 0, "Amount must be > 0");
-        require(_provider != address(0), "Invalid provider");
+        if (msg.sender != gatewaySession) revert Unauthorized();
+        if (sessionLocks[_sessionId] != 0) revert SessionAlreadyExists();
+        if (balances[_agent][_token] < _amount) revert InsufficientBalance();
+        if (_amount == 0) revert InvalidAmount();
+        if (_provider == address(0)) revert InvalidAddress();
 
         // Deduct from agent's internal balance
         balances[_agent][_token] -= _amount;
@@ -602,11 +579,11 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         bytes32 _sessionId,
         uint256 _usedAmount
     ) external nonReentrant {
-        require(msg.sender == gatewaySession, "Only GatewaySession can unlock");
+        if (msg.sender != gatewaySession) revert Unauthorized();
 
         uint256 lockedAmount = sessionLocks[_sessionId];
-        require(lockedAmount > 0, "Session does not exist");
-        require(_usedAmount <= lockedAmount, "Used exceeds locked");
+        if (lockedAmount == 0) revert SessionNotFound();
+        if (_usedAmount > lockedAmount) revert UsedExceedsLocked();
 
         SessionInfo memory info = sessionInfo[_sessionId];
         uint256 refundAmount = lockedAmount - _usedAmount;
@@ -679,3 +656,25 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         balances[_to][_token] += (_amount - fee);
     }
 }
+
+// Custom errors for gas-efficient reverts
+error InvalidAddress();
+error InvalidAmount();
+error InsufficientBalance();
+error FeeTooHigh();
+error DealAlreadyExists();
+error DealNotFound();
+error InvalidDealState();
+error Unauthorized();
+error MetadataTooLarge();
+error MaxChildDealsReached();
+error ExpiryMustBeFuture();
+error DealTimeLocked();
+error SessionAlreadyExists();
+error SessionNotFound();
+error UsedExceedsLocked();
+error AlreadyProcessed();
+error TokenNotConfigured();
+error EthTransferFailed();
+error EthMismatch();
+error NoEthForERC20();

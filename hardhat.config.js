@@ -10,7 +10,7 @@ module.exports = {
             viaIR: true,
             optimizer: {
                 enabled: true,
-                runs: 1, // Low runs = smaller bytecode to fit under 24576 byte limit
+                runs: 200,
             },
         },
     },
