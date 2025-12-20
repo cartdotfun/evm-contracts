@@ -74,8 +74,15 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
     mapping(uint256 => mapping(address => mapping(uint64 => bool)))
         public revokedFeedback;
 
+    // ERC-8004: Response struct for tracking who responded
+    struct Response {
+        address responder;
+        string uri;
+        bytes32 hash;
+    }
+
     // ERC-8004: Track responses (agentId => clientAddress => feedbackIndex => responses)
-    mapping(uint256 => mapping(address => mapping(uint64 => string[])))
+    mapping(uint256 => mapping(address => mapping(uint64 => Response[])))
         private _responses;
 
     // ERC-8004: Track clients per agent
@@ -89,6 +96,23 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
         bytes32 tag2;
         bool isRevoked;
     }
+
+    // Helper struct to bundle filter parameters (reduces stack depth)
+    struct FeedbackFilter {
+        bytes32 tag1;
+        bytes32 tag2;
+        bool includeRevoked;
+    }
+
+    // Helper struct to bundle output arrays (reduces stack depth)
+    struct FeedbackArrays {
+        address[] clients;
+        uint8[] scores;
+        bytes32[] tag1s;
+        bytes32[] tag2s;
+        bool[] revokedStatuses;
+    }
+
     mapping(uint256 => mapping(address => mapping(uint64 => ERC8004Feedback)))
         private _feedbackByIndex;
 
@@ -469,7 +493,13 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
             "Invalid index"
         );
 
-        _responses[agentId][clientAddress][feedbackIndex].push(responseUri);
+        _responses[agentId][clientAddress][feedbackIndex].push(
+            Response({
+                responder: msg.sender,
+                uri: responseUri,
+                hash: responseHash
+            })
+        );
 
         emit ResponseAppended(
             agentId,
@@ -518,58 +548,136 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
             bool[] memory revokedStatuses
         )
     {
-        // Use provided clients or get all clients
-        address[] memory targetClients;
-        if (clientAddresses.length > 0) {
-            targetClients = new address[](clientAddresses.length);
-            for (uint256 i = 0; i < clientAddresses.length; i++) {
-                targetClients[i] = clientAddresses[i];
-            }
-        } else {
-            targetClients = _agentClients[agentId];
-        }
+        // Bundle filter params into struct to reduce stack depth
+        FeedbackFilter memory filter = FeedbackFilter(
+            tag1,
+            tag2,
+            includeRevoked
+        );
 
-        // Count matching feedback
-        uint256 count = 0;
-        for (uint256 i = 0; i < targetClients.length; i++) {
-            address client = targetClients[i];
-            uint64 lastIdx = _lastIndices[agentId][client];
-            for (uint64 j = 1; j <= lastIdx; j++) {
-                ERC8004Feedback storage fb = _feedbackByIndex[agentId][client][
-                    j
-                ];
-                if (!includeRevoked && fb.isRevoked) continue;
-                if (tag1 != bytes32(0) && fb.tag1 != tag1) continue;
-                if (tag2 != bytes32(0) && fb.tag2 != tag2) continue;
+        // Get target clients
+        address[] memory targetClients = clientAddresses.length > 0
+            ? _copyAddresses(clientAddresses)
+            : _agentClients[agentId];
+
+        // Count and allocate
+        uint256 count = _countMatches(agentId, targetClients, filter);
+
+        // Create output struct
+        FeedbackArrays memory out;
+        out.clients = new address[](count);
+        out.scores = new uint8[](count);
+        out.tag1s = new bytes32[](count);
+        out.tag2s = new bytes32[](count);
+        out.revokedStatuses = new bool[](count);
+
+        // Fill arrays
+        _fillArrays(agentId, targetClients, filter, out);
+
+        return (
+            out.clients,
+            out.scores,
+            out.tag1s,
+            out.tag2s,
+            out.revokedStatuses
+        );
+    }
+
+    /**
+     * @dev Internal: Copy calldata addresses to memory
+     */
+    function _copyAddresses(
+        address[] calldata addrs
+    ) internal pure returns (address[] memory) {
+        address[] memory result = new address[](addrs.length);
+        for (uint256 i = 0; i < addrs.length; i++) {
+            result[i] = addrs[i];
+        }
+        return result;
+    }
+
+    /**
+     * @dev Internal: Count matching feedback entries
+     */
+    function _countMatches(
+        uint256 agentId,
+        address[] memory clients,
+        FeedbackFilter memory filter
+    ) internal view returns (uint256 count) {
+        for (uint256 i = 0; i < clients.length; i++) {
+            count += _countClientFeedback(agentId, clients[i], filter);
+        }
+    }
+
+    /**
+     * @dev Internal: Count feedback for a single client
+     */
+    function _countClientFeedback(
+        uint256 agentId,
+        address client,
+        FeedbackFilter memory filter
+    ) internal view returns (uint256 count) {
+        uint64 lastIdx = _lastIndices[agentId][client];
+        for (uint64 j = 1; j <= lastIdx; j++) {
+            if (_matchesFilter(agentId, client, j, filter)) {
                 count++;
             }
         }
+    }
 
-        // Allocate arrays
-        clients = new address[](count);
-        scores = new uint8[](count);
-        tag1s = new bytes32[](count);
-        tag2s = new bytes32[](count);
-        revokedStatuses = new bool[](count);
+    /**
+     * @dev Internal: Check if feedback at index matches filter
+     */
+    function _matchesFilter(
+        uint256 agentId,
+        address client,
+        uint64 index,
+        FeedbackFilter memory filter
+    ) internal view returns (bool) {
+        ERC8004Feedback storage fb = _feedbackByIndex[agentId][client][index];
+        if (!filter.includeRevoked && fb.isRevoked) return false;
+        if (filter.tag1 != bytes32(0) && fb.tag1 != filter.tag1) return false;
+        if (filter.tag2 != bytes32(0) && fb.tag2 != filter.tag2) return false;
+        return true;
+    }
 
-        // Fill arrays
+    /**
+     * @dev Internal: Fill output arrays with matching feedback
+     */
+    function _fillArrays(
+        uint256 agentId,
+        address[] memory clients,
+        FeedbackFilter memory filter,
+        FeedbackArrays memory out
+    ) internal view {
         uint256 idx = 0;
-        for (uint256 i = 0; i < targetClients.length; i++) {
-            address client = targetClients[i];
-            uint64 lastIdx = _lastIndices[agentId][client];
-            for (uint64 j = 1; j <= lastIdx; j++) {
+        for (uint256 i = 0; i < clients.length; i++) {
+            idx = _fillClientFeedback(agentId, clients[i], filter, out, idx);
+        }
+    }
+
+    /**
+     * @dev Internal: Fill feedback for a single client, returns new index
+     */
+    function _fillClientFeedback(
+        uint256 agentId,
+        address client,
+        FeedbackFilter memory filter,
+        FeedbackArrays memory out,
+        uint256 startIdx
+    ) internal view returns (uint256 idx) {
+        idx = startIdx;
+        uint64 lastIdx = _lastIndices[agentId][client];
+        for (uint64 j = 1; j <= lastIdx; j++) {
+            if (_matchesFilter(agentId, client, j, filter)) {
                 ERC8004Feedback storage fb = _feedbackByIndex[agentId][client][
                     j
                 ];
-                if (!includeRevoked && fb.isRevoked) continue;
-                if (tag1 != bytes32(0) && fb.tag1 != tag1) continue;
-                if (tag2 != bytes32(0) && fb.tag2 != tag2) continue;
-
-                clients[idx] = client;
-                scores[idx] = fb.score;
-                tag1s[idx] = fb.tag1;
-                tag2s[idx] = fb.tag2;
-                revokedStatuses[idx] = fb.isRevoked;
+                out.clients[idx] = client;
+                out.scores[idx] = fb.score;
+                out.tag1s[idx] = fb.tag1;
+                out.tag2s[idx] = fb.tag2;
+                out.revokedStatuses[idx] = fb.isRevoked;
                 idx++;
             }
         }
@@ -593,9 +701,26 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
         uint64 feedbackIndex,
         address[] calldata responders
     ) external view returns (uint64) {
-        // For simplicity, return total response count
-        // Filtering by responders would require storing responder addresses
-        return uint64(_responses[agentId][clientAddress][feedbackIndex].length);
+        Response[] storage responses = _responses[agentId][clientAddress][
+            feedbackIndex
+        ];
+
+        // If no responders filter, return total count
+        if (responders.length == 0) {
+            return uint64(responses.length);
+        }
+
+        // Count responses from specified responders
+        uint64 count = 0;
+        for (uint256 i = 0; i < responses.length; i++) {
+            for (uint256 j = 0; j < responders.length; j++) {
+                if (responses[i].responder == responders[j]) {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
     }
 
     /**
