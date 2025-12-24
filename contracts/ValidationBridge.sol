@@ -22,27 +22,6 @@ contract ValidationBridge is Ownable, IValidationBridge {
     // Authorized validators (arbiter addresses)
     mapping(address => bool) public authorizedValidators;
 
-    // Validation request record
-    struct ValidationRequest {
-        bytes32 dealId;
-        uint256 agentId; // Agent being validated
-        string requestUri; // Points to inputs/outputs needed for verification
-        bytes32 requestHash; // Commitment hash
-        uint256 requestedAt;
-        address requester;
-        address validatorAddress; // Target validator
-    }
-
-    // Validation response record
-    struct ValidationResponse {
-        uint8 score; // 0-100 (0 = failed, 100 = passed)
-        string responseUri; // Points to validation evidence/audit
-        bytes32 responseHash; // Commitment hash
-        bytes32 tag; // Custom categorization (e.g., "soft_finality", "hard_finality")
-        uint256 respondedAt;
-        address validator;
-    }
-
     // requestHash => ValidationRequest
     mapping(bytes32 => ValidationRequest) public validationRequests;
 
@@ -57,34 +36,6 @@ contract ValidationBridge is Ownable, IValidationBridge {
 
     // ERC-8004: validatorAddress => list of request hashes
     mapping(address => bytes32[]) public validatorRequests;
-
-    // Legacy events (kept for compatibility)
-    event ValidationRequested(
-        address indexed validatorAddress,
-        uint256 indexed agentId,
-        bytes32 indexed requestHash,
-        string requestUri,
-        bytes32 dealId
-    );
-
-    event ValidationResponded(
-        address indexed validatorAddress,
-        uint256 indexed agentId,
-        bytes32 indexed requestHash,
-        uint8 score,
-        string responseUri,
-        bytes32 tag
-    );
-
-    event ConditionalReleaseTriggered(
-        bytes32 indexed dealId,
-        bytes32 indexed requestHash,
-        uint8 score,
-        uint8 threshold
-    );
-
-    event ValidatorAuthorized(address indexed validator);
-    event ValidatorRevoked(address indexed validator);
 
     constructor(
         address _trustEngine,
