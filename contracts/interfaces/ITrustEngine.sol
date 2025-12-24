@@ -7,6 +7,97 @@ pragma solidity ^0.8.24;
  */
 interface ITrustEngine {
     // ═══════════════════════════════════════════════════════════════════════
+    // Events
+    // ═══════════════════════════════════════════════════════════════════════
+
+    event SolanaRelayUpdated(address indexed newRelay);
+    event SolanaSessionTokenUpdated(address indexed newToken);
+    event CrossChainSettlement(
+        bytes32 indexed sessionId,
+        address indexed agent,
+        address indexed provider,
+        uint256 amount
+    );
+
+    event ArbiterUpdated(address indexed newArbiter);
+    event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
+    event ProtocolFeeRecipientUpdated(
+        address oldRecipient,
+        address newRecipient
+    );
+    event ArbitrationFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
+    event ArbitrationFeeRecipientUpdated(
+        address oldRecipient,
+        address newRecipient
+    );
+    event ValidationBridgeUpdated(address indexed newBridge);
+    event ProtocolFeeCollected(
+        bytes32 indexed refId,
+        address indexed token,
+        uint256 amount
+    );
+
+    event Deposited(
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+    event Withdrawn(
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+    event DealCreated(
+        bytes32 indexed dealId,
+        address indexed buyer,
+        address indexed seller,
+        address token,
+        uint256 amount,
+        bytes32 parentDealId,
+        uint256 expiresAt
+    );
+    event DealReleased(
+        bytes32 indexed dealId,
+        address indexed seller,
+        uint256 amount
+    );
+    event DealRefunded(
+        bytes32 indexed dealId,
+        address indexed buyer,
+        uint256 amount
+    );
+    event WorkSubmitted(
+        bytes32 indexed dealId,
+        address indexed seller,
+        string resultHash
+    );
+    event DisputeRaised(bytes32 indexed dealId, address indexed raiser);
+    event DisputeResolved(
+        bytes32 indexed dealId,
+        DealState resolution,
+        string judgmentCid
+    );
+    event ChildDealCreated(
+        bytes32 indexed parentDealId,
+        bytes32 indexed childDealId,
+        address indexed seller,
+        uint256 amount
+    );
+    event GatewaySessionUpdated(address indexed newGatewaySession);
+    event SessionLocked(
+        bytes32 indexed sessionId,
+        address indexed agent,
+        address indexed provider,
+        address token,
+        uint256 amount
+    );
+    event SessionUnlocked(
+        bytes32 indexed sessionId,
+        uint256 toProvider,
+        uint256 refundedToAgent
+    );
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Data Structures
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -61,6 +152,32 @@ interface ITrustEngine {
     function setArbitrationFeeRecipient(address _newRecipient) external;
 
     function setGatewaySession(address _gatewaySession) external;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // View Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    function arbiter() external view returns (address);
+
+    function protocolFeeRecipient() external view returns (address);
+
+    function protocolFeeBps() external view returns (uint256);
+
+    function arbitrationFeeRecipient() external view returns (address);
+
+    function arbitrationFeeBps() external view returns (uint256);
+
+    function validationBridge() external view returns (address);
+
+    function gatewaySession() external view returns (address);
+
+    function solanaRelay() external view returns (address);
+
+    function processedSolanaSettlements(
+        bytes32 settlementId
+    ) external view returns (bool);
+
+    function solanaSessionToken() external view returns (address);
 
     // ═══════════════════════════════════════════════════════════════════════
     // Core Vault Functions

@@ -1,11 +1,50 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "./ITrustEngine.sol";
+
 /**
  * @title IGatewaySession
  * @dev Interface for GatewaySession - Manages x402-style payment sessions.
  */
 interface IGatewaySession {
+    // ═══════════════════════════════════════════════════════════════════════
+    // Events
+    // ═══════════════════════════════════════════════════════════════════════
+
+    event TrustEngineUpdated(address indexed newTrustEngine);
+    event GatewayRegistered(
+        string indexed slug,
+        address indexed provider,
+        uint256 pricePerRequest
+    );
+    event GatewayUpdated(string indexed slug, uint256 newPrice);
+    event GatewayDeactivated(string indexed slug);
+
+    event SessionOpened(
+        bytes32 indexed sessionId,
+        address indexed agent,
+        address indexed provider,
+        string gatewaySlug,
+        uint256 depositAmount,
+        uint256 expiresAt
+    );
+
+    event UsageRecorded(
+        bytes32 indexed sessionId,
+        uint256 amount,
+        uint256 cumulativeUsed
+    );
+
+    event SessionSettled(
+        bytes32 indexed sessionId,
+        uint256 totalUsed,
+        uint256 refunded
+    );
+
+    event SessionCancelled(bytes32 indexed sessionId, uint256 refunded);
+    event SessionRenewed(bytes32 indexed sessionId, uint256 newExpiresAt);
+
     // ═══════════════════════════════════════════════════════════════════════
     // Data Structures
     // ═══════════════════════════════════════════════════════════════════════
@@ -35,6 +74,8 @@ interface IGatewaySession {
     // ═══════════════════════════════════════════════════════════════════════
 
     function setTrustEngine(address _trustEngine) external;
+
+    function trustEngine() external view returns (ITrustEngine);
 
     // ═══════════════════════════════════════════════════════════════════════
     // Gateway Registry Functions
@@ -127,4 +168,10 @@ interface IGatewaySession {
     function getActiveSessions(
         address _provider
     ) external view returns (bytes32[] memory);
+
+    function agentNonces(address agent) external view returns (uint256);
+
+    function activeSessionsByProvider(
+        address provider
+    ) external view returns (uint256);
 }

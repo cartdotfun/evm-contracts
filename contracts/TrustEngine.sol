@@ -20,147 +20,50 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     using SafeERC20 for IERC20;
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Security Constants
+    // State Variables
     // ═══════════════════════════════════════════════════════════════════════
+
     uint256 public constant MAX_CHILD_DEALS = 10;
     uint256 public constant MAX_METADATA_SIZE = 1024; // 1KB
 
-    // Internal Accounting: User -> Token -> Balance
-    // address(0) represents Native ETH
     mapping(address => mapping(address => uint256)) public override balances;
-
     mapping(bytes32 => Deal) public override deals;
+    mapping(bytes32 => uint256) public override sessionLocks;
+    mapping(bytes32 => SessionInfo) public sessionInfo;
+    mapping(bytes32 => bool) public processedSolanaSettlements;
 
     address public arbiter;
-
     address public protocolFeeRecipient;
-    uint256 public protocolFeeBps; // 0 = 0%, 10 = 0.1%, 100 = 1%
-
+    uint256 public protocolFeeBps;
     address public arbitrationFeeRecipient;
-    uint256 public arbitrationFeeBps; // 300 = 3%
-
-    // ERC-8004 ValidationBridge address (authorized to call release)
+    uint256 public arbitrationFeeBps;
     address public validationBridge;
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Gateway Session Support (for x402-style batched payments)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    // Session lock tracking: sessionId -> locked amount
-    mapping(bytes32 => uint256) public override sessionLocks;
-    // Session metadata: sessionId -> (agent, provider, token)
-    mapping(bytes32 => SessionInfo) public sessionInfo;
-    // Authorized GatewaySession contract address
     address public gatewaySession;
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Solana Cross-Chain Settlement Support
-    // ═══════════════════════════════════════════════════════════════════════
-
-    // Authorized relay address for Solana → Base settlements
     address public solanaRelay;
-    // Track processed Solana settlements to prevent replay
-    mapping(bytes32 => bool) public processedSolanaSettlements;
-    // Default token for Solana sessions (USDC)
     address public solanaSessionToken;
 
-    event SolanaRelayUpdated(address indexed newRelay);
-    event SolanaSessionTokenUpdated(address indexed newToken);
-    event CrossChainSettlement(
-        bytes32 indexed sessionId,
-        address indexed agent,
-        address indexed provider,
-        uint256 amount
-    );
-
-    event ArbiterUpdated(address indexed newArbiter);
-    event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
-    event ProtocolFeeRecipientUpdated(
-        address oldRecipient,
-        address newRecipient
-    );
-    event ArbitrationFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
-    event ArbitrationFeeRecipientUpdated(
-        address oldRecipient,
-        address newRecipient
-    );
-    event ValidationBridgeUpdated(address indexed newBridge);
-    event ProtocolFeeCollected(
-        bytes32 indexed refId,
-        address indexed token,
-        uint256 amount
-    );
-
-    event Deposited(
-        address indexed user,
-        address indexed token,
-        uint256 amount
-    );
-    event Withdrawn(
-        address indexed user,
-        address indexed token,
-        uint256 amount
-    );
-    event DealCreated(
-        bytes32 indexed dealId,
-        address indexed buyer,
-        address indexed seller,
-        address token,
-        uint256 amount,
-        bytes32 parentDealId,
-        uint256 expiresAt
-    );
-    event DealReleased(
-        bytes32 indexed dealId,
-        address indexed seller,
-        uint256 amount
-    );
-    event DealRefunded(
-        bytes32 indexed dealId,
-        address indexed buyer,
-        uint256 amount
-    );
-    event WorkSubmitted(
-        bytes32 indexed dealId,
-        address indexed seller,
-        string resultHash
-    );
-    event DisputeRaised(bytes32 indexed dealId, address indexed raiser);
-    event DisputeResolved(
-        bytes32 indexed dealId,
-        DealState resolution,
-        string judgmentCid
-    );
-    event ChildDealCreated(
-        bytes32 indexed parentDealId,
-        bytes32 indexed childDealId,
-        address indexed seller,
-        uint256 amount
-    );
-    event GatewaySessionUpdated(address indexed newGatewaySession);
-    event SessionLocked(
-        bytes32 indexed sessionId,
-        address indexed agent,
-        address indexed provider,
-        address token,
-        uint256 amount
-    );
-    event SessionUnlocked(
-        bytes32 indexed sessionId,
-        uint256 toProvider,
-        uint256 refundedToAgent
-    );
+    // ═══════════════════════════════════════════════════════════════════════
+    // Constructor
+    // ═══════════════════════════════════════════════════════════════════════
 
     constructor(address _initialOwner) Ownable(_initialOwner) {}
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Admin Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Sets the arbiter address.
+     * @param _arbiter The new arbiter address.
+     */
     function setArbiter(address _arbiter) external onlyOwner {
         arbiter = _arbiter;
         emit ArbiterUpdated(_arbiter);
     }
 
     /**
-     * @dev Set authorized Solana relay address (only owner)
-     * @param _relay Address authorized to submit Solana settlements
+     * @dev Set authorized Solana relay address.
+     * @param _relay Address authorized to submit Solana settlements.
      */
     function setSolanaRelay(address _relay) external onlyOwner {
         if (_relay == address(0)) revert InvalidAddress();
@@ -169,8 +72,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Set token used for Solana sessions (only owner)
-     * @param _token Token address (typically USDC)
+     * @dev Set token used for Solana sessions.
+     * @param _token Token address (typically USDC).
      */
     function setSolanaSessionToken(address _token) external onlyOwner {
         solanaSessionToken = _token;
@@ -178,37 +81,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Settle a session from Solana (called by authorized relay)
-     * @param _sessionId Unique session identifier from Solana
-     * @param _agent Agent address (EVM)
-     * @param _provider Provider address (EVM)
-     * @param _amount Amount to transfer from agent to provider
-     */
-    function settleFromSolana(
-        bytes32 _sessionId,
-        address _agent,
-        address _provider,
-        uint256 _amount
-    ) external nonReentrant {
-        if (msg.sender != solanaRelay) revert Unauthorized();
-        if (processedSolanaSettlements[_sessionId]) revert AlreadyProcessed();
-        if (solanaSessionToken == address(0)) revert TokenNotConfigured();
-        if (balances[_agent][solanaSessionToken] < _amount)
-            revert InsufficientBalance();
-
-        // Mark as processed to prevent replay
-        processedSolanaSettlements[_sessionId] = true;
-
-        // Transfer from agent balance to provider balance
-        balances[_agent][solanaSessionToken] -= _amount;
-        _distributeWithFee(_sessionId, _provider, solanaSessionToken, _amount);
-
-        emit CrossChainSettlement(_sessionId, _agent, _provider, _amount);
-    }
-
-    /**
-     * @dev Set ERC-8004 ValidationBridge address (only owner)
-     * @param _validationBridge Address of the ValidationBridge contract
+     * @dev Set ERC-8004 ValidationBridge address.
+     * @param _validationBridge Address of the ValidationBridge contract.
      */
     function setValidationBridge(address _validationBridge) external onlyOwner {
         validationBridge = _validationBridge;
@@ -216,8 +90,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Update protocol fee (only owner)
-     * @param _newFeeBps New fee in basis points (10 = 0.1%, 100 = 1%)
+     * @dev Update protocol fee.
+     * @param _newFeeBps New fee in basis points (10 = 0.1%, 100 = 1%).
      */
     function setProtocolFee(uint256 _newFeeBps) external onlyOwner {
         if (_newFeeBps > 1000) revert FeeTooHigh();
@@ -227,7 +101,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Update protocol fee recipient (only owner)
+     * @dev Update protocol fee recipient.
+     * @param _newRecipient The new recipient address.
      */
     function setProtocolFeeRecipient(address _newRecipient) external onlyOwner {
         if (_newRecipient == address(0)) revert InvalidAddress();
@@ -237,8 +112,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Update arbitration fee (only owner)
-     * @param _newFeeBps New fee in basis points (300 = 3%)
+     * @dev Update arbitration fee.
+     * @param _newFeeBps New fee in basis points (300 = 3%).
      */
     function setArbitrationFee(uint256 _newFeeBps) external onlyOwner {
         if (_newFeeBps > 1000) revert FeeTooHigh();
@@ -248,7 +123,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Update arbitration fee recipient (only owner)
+     * @dev Update arbitration fee recipient.
+     * @param _newRecipient The new recipient address.
      */
     function setArbitrationFeeRecipient(
         address _newRecipient
@@ -258,11 +134,24 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         arbitrationFeeRecipient = _newRecipient;
         emit ArbitrationFeeRecipientUpdated(oldRecipient, _newRecipient);
     }
+    
+    /**
+     * @dev Set the authorized GatewaySession contract address.
+     * @param _gatewaySession Address of the GatewaySession contract.
+     */
+    function setGatewaySession(address _gatewaySession) external onlyOwner {
+        gatewaySession = _gatewaySession;
+        emit GatewaySessionUpdated(_gatewaySession);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Core Vault Functions
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * @dev Deposit assets into internal balance.
-     * @param _token Token address (use address(0) for ETH)
-     * @param _amount Amount to deposit
+     * @param _token Token address (use address(0) for ETH).
+     * @param _amount Amount to deposit.
      */
     function deposit(
         address _token,
@@ -283,8 +172,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
 
     /**
      * @dev Withdraw assets from internal balance to wallet.
-     * @param _token Token address (use address(0) for ETH)
-     * @param _amount Amount to withdraw
+     * @param _token Token address (use address(0) for ETH).
+     * @param _amount Amount to withdraw.
      */
     function withdraw(address _token, uint256 _amount) external nonReentrant {
         if (balances[msg.sender][_token] < _amount)
@@ -302,15 +191,19 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         emit Withdrawn(msg.sender, _token, _amount);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Deal Lifecycle Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
     /**
      * @dev Create a deal by locking internal funds.
-     * @param _dealId Unique identifier for the deal
-     * @param _seller Seller address
-     * @param _token Token address
-     * @param _amount Amount to lock
-     * @param _metadata Flexible JSON-encoded deal data (empty bytes for simple deals)
-     * @param _parentDealId Parent deal ID (0x0 for root deals)
-     * @param _expiresAt Time-lock release timestamp (0 for no time-lock)
+     * @param _dealId Unique identifier for the deal.
+     * @param _seller Seller address.
+     * @param _token Token address.
+     * @param _amount Amount to lock.
+     * @param _metadata Flexible JSON-encoded deal data (empty bytes for simple deals).
+     * @param _parentDealId Parent deal ID (0x0 for root deals).
+     * @param _expiresAt Time-lock release timestamp (0 for no time-lock).
      */
     function createDeal(
         bytes32 _dealId,
@@ -328,7 +221,6 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         if (_seller == address(0)) revert InvalidAddress();
         if (_metadata.length > MAX_METADATA_SIZE) revert MetadataTooLarge();
 
-        // If parent specified, validate it exists and is owned by buyer
         if (_parentDealId != bytes32(0)) {
             if (deals[_parentDealId].state == DealState.NONE)
                 revert DealNotFound();
@@ -337,15 +229,12 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
                 revert MaxChildDealsReached();
         }
 
-        // Validate expiry time if specified
         if (_expiresAt > 0) {
             if (_expiresAt <= block.timestamp) revert ExpiryMustBeFuture();
         }
 
-        // Lock funds (deduct from buyer's internal balance)
         balances[msg.sender][_token] -= _amount;
 
-        // Initialize empty child array
         bytes32[] memory emptyChildren;
 
         deals[_dealId] = Deal({
@@ -363,7 +252,6 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
             expiresAt: _expiresAt
         });
 
-        // If this is a child deal, update parent's child list
         if (_parentDealId != bytes32(0)) {
             deals[_parentDealId].childDealIds.push(_dealId);
             emit ChildDealCreated(_parentDealId, _dealId, _seller, _amount);
@@ -382,8 +270,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
 
     /**
      * @dev Submit work (IPFS hash) for verification.
-     * @param _dealId Deal identifier
-     * @param _resultHash IPFS hash or link to work
+     * @param _dealId Deal identifier.
+     * @param _resultHash IPFS hash or link to work.
      */
     function submitWork(
         bytes32 _dealId,
@@ -401,7 +289,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
 
     /**
      * @dev Raise a dispute.
-     * @param _dealId Deal identifier
+     * @param _dealId Deal identifier.
      */
     function raiseDispute(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
@@ -415,9 +303,10 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Resolve a dispute (Buyer or Arbiter only for now).
-     * @param _dealId Deal identifier
-     * @param _releaseToSeller True to release to seller, False to refund buyer
+     * @dev Resolve a dispute.
+     * @param _dealId Deal identifier.
+     * @param _releaseToSeller True to release to seller, False to refund buyer.
+     * @param _judgmentCid IPFS CID of the judgment.
      */
     function resolveDispute(
         bytes32 _dealId,
@@ -426,7 +315,6 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     ) external nonReentrant {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.DISPUTE) revert InvalidDealState();
-        // Only Arbiter can resolve disputes
         if (msg.sender != arbiter) revert Unauthorized();
 
         deal.judgmentCid = _judgmentCid;
@@ -446,27 +334,24 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
 
     /**
      * @dev Release funds to seller.
-     * @param _dealId Deal identifier
+     * @param _dealId Deal identifier.
      */
     function release(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
             revert InvalidDealState();
-        // Buyer, Arbiter, or ValidationBridge can release
         if (
             msg.sender != deal.buyer &&
             msg.sender != arbiter &&
             msg.sender != validationBridge
         ) revert Unauthorized();
 
-        // Enforce time-lock if specified
         if (deal.expiresAt > 0) {
             if (block.timestamp < deal.expiresAt) revert DealTimeLocked();
         }
 
         deal.state = DealState.COMPLETED;
 
-        // Transfer to seller's internal balance
         _distributeWithFee(_dealId, deal.seller, deal.token, deal.amount);
 
         emit DealReleased(_dealId, deal.seller, deal.amount);
@@ -474,52 +359,19 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
 
     /**
      * @dev Refund funds to buyer.
-     * @param _dealId Deal identifier
+     * @param _dealId Deal identifier.
      */
     function refund(bytes32 _dealId) external nonReentrant {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
             revert InvalidDealState();
-        // Only Seller can refund (TODO: Add Arbiter)
         if (msg.sender != deal.seller) revert Unauthorized();
 
         deal.state = DealState.REFUNDED;
 
-        // Transfer back to buyer's internal balance
         balances[deal.buyer][deal.token] += deal.amount;
 
         emit DealRefunded(_dealId, deal.buyer, deal.amount);
-    }
-
-    /**
-     * @dev Get all child deal IDs for a given deal
-     * @param _dealId Deal identifier
-     * @return Array of child deal IDs
-     */
-    function getDealChildren(
-        bytes32 _dealId
-    ) external view returns (bytes32[] memory) {
-        return deals[_dealId].childDealIds;
-    }
-
-    /**
-     * @dev Check if a deal has a parent
-     * @param _dealId Deal identifier
-     * @return True if deal has a parent, false otherwise
-     */
-    function hasParent(bytes32 _dealId) external view returns (bool) {
-        return deals[_dealId].parentDealId != bytes32(0);
-    }
-
-    /**
-     * @dev Get deal metadata
-     * @param _dealId Deal identifier
-     * @return Deal metadata bytes
-     */
-    function getDealMetadata(
-        bytes32 _dealId
-    ) external view returns (bytes memory) {
-        return deals[_dealId].metadata;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -527,21 +379,12 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Set the authorized GatewaySession contract address (only owner)
-     * @param _gatewaySession Address of the GatewaySession contract
-     */
-    function setGatewaySession(address _gatewaySession) external onlyOwner {
-        gatewaySession = _gatewaySession;
-        emit GatewaySessionUpdated(_gatewaySession);
-    }
-
-    /**
-     * @dev Lock funds from agent's internal balance for a session (only GatewaySession contract)
-     * @param _sessionId Unique session identifier
-     * @param _agent Agent whose funds are being locked
-     * @param _provider Service provider who will receive payment
-     * @param _token Token address (use address(0) for ETH)
-     * @param _amount Amount to lock
+     * @dev Lock funds from agent's internal balance for a session.
+     * @param _sessionId Unique session identifier.
+     * @param _agent Agent whose funds are being locked.
+     * @param _provider Service provider who will receive payment.
+     * @param _token Token address (use address(0) for ETH).
+     * @param _amount Amount to lock.
      */
     function lockForSession(
         bytes32 _sessionId,
@@ -556,10 +399,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         if (_amount == 0) revert InvalidAmount();
         if (_provider == address(0)) revert InvalidAddress();
 
-        // Deduct from agent's internal balance
         balances[_agent][_token] -= _amount;
 
-        // Store session info
         sessionLocks[_sessionId] = _amount;
         sessionInfo[_sessionId] = SessionInfo({
             agent: _agent,
@@ -571,9 +412,9 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     }
 
     /**
-     * @dev Unlock session funds: distribute used amount to provider, refund remainder to agent (only GatewaySession contract)
-     * @param _sessionId Session identifier
-     * @param _usedAmount Amount consumed during session (goes to provider)
+     * @dev Unlock session funds: distribute used amount to provider, refund remainder to agent.
+     * @param _sessionId Session identifier.
+     * @param _usedAmount Amount consumed during session (goes to provider).
      */
     function unlockSession(
         bytes32 _sessionId,
@@ -588,10 +429,8 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         SessionInfo memory info = sessionInfo[_sessionId];
         uint256 refundAmount = lockedAmount - _usedAmount;
 
-        // Clear session (prevent reentrancy)
         sessionLocks[_sessionId] = 0;
 
-        // Transfer used amount to provider's internal balance
         if (_usedAmount > 0) {
             _distributeWithFee(
                 _sessionId,
@@ -601,7 +440,6 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
             );
         }
 
-        // Refund remainder to agent's internal balance
         if (refundAmount > 0) {
             balances[info.agent][info.token] += refundAmount;
         }
@@ -609,13 +447,79 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         emit SessionUnlocked(_sessionId, _usedAmount, refundAmount);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Cross-Chain Settlement
+    // ═══════════════════════════════════════════════════════════════════════
+    
     /**
-     * @dev Get session info (view function for SDK/frontend)
-     * @param _sessionId Session identifier
-     * @return lockedAmount The amount locked for this session
-     * @return agent The agent who locked funds
-     * @return provider The service provider
-     * @return token The token used for payment
+     * @dev Settle a session from Solana.
+     * @param _sessionId Unique session identifier from Solana.
+     * @param _agent Agent address (EVM).
+     * @param _provider Provider address (EVM).
+     * @param _amount Amount to transfer from agent to provider.
+     */
+    function settleFromSolana(
+        bytes32 _sessionId,
+        address _agent,
+        address _provider,
+        uint256 _amount
+    ) external nonReentrant {
+        if (msg.sender != solanaRelay) revert Unauthorized();
+        if (processedSolanaSettlements[_sessionId]) revert AlreadyProcessed();
+        if (solanaSessionToken == address(0)) revert TokenNotConfigured();
+        if (balances[_agent][solanaSessionToken] < _amount)
+            revert InsufficientBalance();
+
+        processedSolanaSettlements[_sessionId] = true;
+
+        balances[_agent][solanaSessionToken] -= _amount;
+        _distributeWithFee(_sessionId, _provider, solanaSessionToken, _amount);
+
+        emit CrossChainSettlement(_sessionId, _agent, _provider, _amount);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // View Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Get all child deal IDs for a given deal.
+     * @param _dealId Deal identifier.
+     * @return Array of child deal IDs.
+     */
+    function getDealChildren(
+        bytes32 _dealId
+    ) external view returns (bytes32[] memory) {
+        return deals[_dealId].childDealIds;
+    }
+
+    /**
+     * @dev Check if a deal has a parent.
+     * @param _dealId Deal identifier.
+     * @return True if deal has a parent, false otherwise.
+     */
+    function hasParent(bytes32 _dealId) external view returns (bool) {
+        return deals[_dealId].parentDealId != bytes32(0);
+    }
+
+    /**
+     * @dev Get deal metadata.
+     * @param _dealId Deal identifier.
+     * @return Deal metadata bytes.
+     */
+    function getDealMetadata(
+        bytes32 _dealId
+    ) external view returns (bytes memory) {
+        return deals[_dealId].metadata;
+    }
+
+    /**
+     * @dev Get session info.
+     * @param _sessionId Session identifier.
+     * @return lockedAmount The amount locked for this session.
+     * @return agent The agent who locked funds.
+     * @return provider The service provider.
+     * @return token The token used for payment.
      */
     function getSessionInfo(
         bytes32 _sessionId
@@ -637,9 +541,13 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
             info.token
         );
     }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // Internal Functions
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Internal helper to distribute funds with protocol fee deduction
+     * @dev Internal helper to distribute funds with protocol fee deduction.
      */
     function _distributeWithFee(
         bytes32 _refId,

@@ -49,40 +49,6 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
     // Index of session in providerSessions array (for efficient removal)
     mapping(bytes32 => uint256) private sessionIndex;
 
-    // Events
-    event TrustEngineUpdated(address indexed newTrustEngine);
-    event GatewayRegistered(
-        string indexed slug,
-        address indexed provider,
-        uint256 pricePerRequest
-    );
-    event GatewayUpdated(string indexed slug, uint256 newPrice);
-    event GatewayDeactivated(string indexed slug);
-
-    event SessionOpened(
-        bytes32 indexed sessionId,
-        address indexed agent,
-        address indexed provider,
-        string gatewaySlug,
-        uint256 depositAmount,
-        uint256 expiresAt
-    );
-
-    event UsageRecorded(
-        bytes32 indexed sessionId,
-        uint256 amount,
-        uint256 cumulativeUsed
-    );
-
-    event SessionSettled(
-        bytes32 indexed sessionId,
-        uint256 totalUsed,
-        uint256 refunded
-    );
-
-    event SessionCancelled(bytes32 indexed sessionId, uint256 refunded);
-    event SessionRenewed(bytes32 indexed sessionId, uint256 newExpiresAt);
-
     constructor(
         address _trustEngine,
         address _initialOwner
