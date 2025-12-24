@@ -10,6 +10,33 @@ pragma solidity ^0.8.24;
  */
 interface IReputationRegistry {
     // ═══════════════════════════════════════════════════════════════════════
+    // Structs
+    // ═══════════════════════════════════════════════════════════════════════
+
+    struct Feedback {
+        address reviewer; // Who posted the feedback
+        uint256 reviewerAgentId; // Reviewer's agent ID (0 if not an agent)
+        uint8 score; // 0-100 score
+        bytes32 skillTag; // e.g., keccak256("code_review")
+        string feedbackUri; // Points to detailed feedback JSON
+        bytes32 feedbackCommitment; // Commitment hash
+        uint256 timestamp;
+        bytes32 dealId; // Associated deal (optional, 0x0 if none)
+    }
+
+    struct ReputationSummary {
+        uint64 count;
+        uint64 totalScore; // Sum of all scores (for avg calculation)
+        uint256 lastFeedbackAt;
+    }
+
+    struct Response {
+        address responder;
+        string uri;
+        bytes32 hash;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Events
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -37,9 +64,36 @@ interface IReputationRegistry {
         string responseUri
     );
 
+    event FeedbackPosted(
+        uint256 indexed agentId,
+        address indexed reviewer,
+        bytes32 indexed feedbackHash,
+        uint8 score,
+        bytes32 skillTag,
+        bytes32 dealId
+    );
+
     // ═══════════════════════════════════════════════════════════════════════
     // Core Functions
     // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Post feedback for an agent
+     * @param agentId The agent receiving feedback
+     * @param score Score from 0-100 (0 = failed, 100 = perfect)
+     * @param skillTag Skill category (e.g., keccak256("arbitration"))
+     * @param feedbackUri URI pointing to detailed feedback JSON
+     * @param feedbackHash Hash commitment of feedback data
+     * @param dealId Associated deal ID (optional)
+     */
+    function postFeedback(
+        uint256 agentId,
+        uint8 score,
+        bytes32 skillTag,
+        string calldata feedbackUri,
+        bytes32 feedbackHash,
+        bytes32 dealId
+    ) external;
 
     /**
      * @dev Give feedback with signature authorization (ERC-8004 compliant)
@@ -164,4 +218,72 @@ interface IReputationRegistry {
         uint64 feedbackIndex,
         address[] calldata responders
     ) external view returns (uint64);
+
+    /**
+     * @dev Get aggregated reputation summary
+     * @param agentId The agent to query
+     * @param skillTag Skill filter (bytes32(0) for overall)
+     * @return count Number of feedbacks
+     * @return avgScore Average score (0-100)
+     */
+    function getSummary(
+        uint256 agentId,
+        bytes32 skillTag
+    ) external view returns (uint64 count, uint8 avgScore);
+
+    /**
+     * @dev Get all feedback hashes for an agent
+     * @param agentId The agent to query
+     * @return Array of feedback hashes
+     */
+    function getFeedbackHashes(
+        uint256 agentId
+    ) external view returns (bytes32[] memory);
+
+    /**
+     * @dev Get feedback details by hash
+     * @param feedbackHash The feedback hash to query
+     * @return feedback The feedback record
+     */
+    function getFeedback(
+        bytes32 feedbackHash
+    ) external view returns (Feedback memory);
+
+    /**
+     * @dev Get feedback count for an agent
+     * @param agentId The agent to query
+     * @return count Number of feedbacks
+     */
+    function getFeedbackCount(uint256 agentId) external view returns (uint256);
+
+    function identityRegistry() external view returns (address);
+
+    function agentFeedbackHashes(uint256 agentId, uint256 index) external view returns (bytes32);
+
+    function feedbacks(bytes32 feedbackHash) external view returns (
+        address reviewer,
+        uint256 reviewerAgentId,
+        uint8 score,
+        bytes32 skillTag,
+        string memory feedbackUri,
+        bytes32 feedbackCommitment,
+        uint256 timestamp,
+        bytes32 dealId
+    );
+
+    function reputationBySkill(uint256 agentId, bytes32 skillTag) external view returns (
+        uint64 count,
+        uint64 totalScore,
+        uint256 lastFeedbackAt
+    );
+
+    function overallReputation(uint256 agentId) external view returns (
+        uint64 count,
+        uint64 totalScore,
+        uint256 lastFeedbackAt
+    );
+
+    function revokedFeedback(uint256 agentId, address client, uint64 index) external view returns (bool);
+
+    function setIdentityRegistry(address _identityRegistry) external;
 }

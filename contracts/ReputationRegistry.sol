@@ -17,77 +17,9 @@ import "./interfaces/IReputationRegistry.sol";
  * - ERC-8004 giveFeedback (requires agent signature authorization)
  */
 contract ReputationRegistry is Ownable, IReputationRegistry {
-    // Reference to IdentityRegistry
-    address public identityRegistry;
-
-    // Feedback record
-    struct Feedback {
-        address reviewer; // Who posted the feedback
-        uint256 reviewerAgentId; // Reviewer's agent ID (0 if not an agent)
-        uint8 score; // 0-100 score
-        bytes32 skillTag; // e.g., keccak256("code_review")
-        string feedbackUri; // Points to detailed feedback JSON
-        bytes32 feedbackHash; // Commitment hash
-        uint256 timestamp;
-        bytes32 dealId; // Associated deal (optional, 0x0 if none)
-    }
-
-    // Aggregated reputation per agent per skill
-    struct ReputationSummary {
-        uint64 count;
-        uint64 totalScore; // Sum of all scores (for avg calculation)
-        uint256 lastFeedbackAt;
-    }
-
-    // agentId => list of feedback hashes
-    mapping(uint256 => bytes32[]) public agentFeedbackHashes;
-
-    // feedbackHash => Feedback
-    mapping(bytes32 => Feedback) public feedbacks;
-
-    // agentId => skillTag => ReputationSummary
-    mapping(uint256 => mapping(bytes32 => ReputationSummary))
-        public reputationBySkill;
-
-    // agentId => overall ReputationSummary (skill-agnostic)
-    mapping(uint256 => ReputationSummary) public overallReputation;
-
-    // ERC-8004: agentId => clientAddress => lastIndex (for indexLimit tracking)
-    mapping(uint256 => mapping(address => uint64)) private _lastIndices;
-
-    // Counter for unique feedback IDs
-    uint256 private _feedbackNonce;
-
-    // Events per ERC-8004 spec
-    event FeedbackPosted(
-        uint256 indexed agentId,
-        address indexed reviewer,
-        bytes32 indexed feedbackHash,
-        uint8 score,
-        bytes32 skillTag,
-        bytes32 dealId
-    );
-
-    // Note: NewFeedback, FeedbackRevoked, ResponseAppended are inherited from IReputationRegistry
-
-    // ERC-8004: Track revoked feedback (agentId => clientAddress => feedbackIndex => isRevoked)
-    mapping(uint256 => mapping(address => mapping(uint64 => bool)))
-        public revokedFeedback;
-
-    // ERC-8004: Response struct for tracking who responded
-    struct Response {
-        address responder;
-        string uri;
-        bytes32 hash;
-    }
-
-    // ERC-8004: Track responses (agentId => clientAddress => feedbackIndex => responses)
-    mapping(uint256 => mapping(address => mapping(uint64 => Response[])))
-        private _responses;
-
-    // ERC-8004: Track clients per agent
-    mapping(uint256 => address[]) private _agentClients;
-    mapping(uint256 => mapping(address => bool)) private _isClient;
+    // ═══════════════════════════════════════════════════════════════════════
+    // Structs
+    // ═══════════════════════════════════════════════════════════════════════
 
     // ERC-8004: Stored feedback by index
     struct ERC8004Feedback {
@@ -112,6 +44,46 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
         bytes32[] tag2s;
         bool[] revokedStatuses;
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // State Variables
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Reference to IdentityRegistry
+    address public identityRegistry;
+
+    // agentId => list of feedback hashes
+    mapping(uint256 => bytes32[]) public agentFeedbackHashes;
+
+    // feedbackHash => Feedback
+    mapping(bytes32 => Feedback) public feedbacks;
+
+    // agentId => skillTag => ReputationSummary
+    mapping(uint256 => mapping(bytes32 => ReputationSummary))
+        public reputationBySkill;
+
+    // agentId => overall ReputationSummary (skill-agnostic)
+    mapping(uint256 => ReputationSummary) public overallReputation;
+
+    // ERC-8004: agentId => clientAddress => lastIndex (for indexLimit tracking)
+    mapping(uint256 => mapping(address => uint64)) private _lastIndices;
+
+    // Counter for unique feedback IDs
+    uint256 private _feedbackNonce;
+
+    // Note: NewFeedback, FeedbackRevoked, ResponseAppended are inherited from IReputationRegistry
+
+    // ERC-8004: Track revoked feedback (agentId => clientAddress => feedbackIndex => isRevoked)
+    mapping(uint256 => mapping(address => mapping(uint64 => bool)))
+        public revokedFeedback;
+
+    // ERC-8004: Track responses (agentId => clientAddress => feedbackIndex => responses)
+    mapping(uint256 => mapping(address => mapping(uint64 => Response[])))
+        private _responses;
+
+    // ERC-8004: Track clients per agent
+    mapping(uint256 => address[]) private _agentClients;
+    mapping(uint256 => mapping(address => bool)) private _isClient;
 
     mapping(uint256 => mapping(address => mapping(uint64 => ERC8004Feedback)))
         private _feedbackByIndex;
@@ -178,7 +150,7 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
             score: score,
             skillTag: skillTag,
             feedbackUri: feedbackUri,
-            feedbackHash: finalHash,
+            feedbackCommitment: finalHash,
             timestamp: block.timestamp,
             dealId: dealId
         });
@@ -390,7 +362,7 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
             score: score,
             skillTag: tag1,
             feedbackUri: fileuri,
-            feedbackHash: filehash,
+            feedbackCommitment: filehash,
             timestamp: block.timestamp,
             dealId: bytes32(0)
         });

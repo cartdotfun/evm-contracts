@@ -22,44 +22,30 @@ contract IdentityRegistry is
     Ownable,
     IIdentityRegistry
 {
+    // ═══════════════════════════════════════════════════════════════════════
+    // State Variables
+    // ═══════════════════════════════════════════════════════════════════════
+
     // Counter for unique agent IDs
     uint256 private _nextAgentId;
 
     // Mapping: address => agentId (0 means not registered)
     mapping(address => uint256) public addressToAgentId;
 
-    // Mapping: agentId => registration data
-    struct AgentRegistration {
-        string registrationUri; // Points to off-chain registration JSON
-        bytes32 registrationHash; // Commitment hash for data integrity
-        uint256 registeredAt;
-        uint256 lastUpdated;
-    }
-
     mapping(uint256 => AgentRegistration) public registrations;
 
     // ERC-8004: On-chain metadata storage (agentId => key => value)
     mapping(uint256 => mapping(string => bytes)) private _metadata;
-
-    // Legacy event (kept for compatibility)
-    event AgentRegistered(
-        uint256 indexed agentId,
-        address indexed owner,
-        string registrationUri,
-        bytes32 registrationHash
-    );
-
-    event AgentUpdated(
-        uint256 indexed agentId,
-        string registrationUri,
-        bytes32 registrationHash
-    );
 
     constructor(
         address _initialOwner
     ) ERC721("Cart.fun Agent", "CART") Ownable(_initialOwner) {
         _nextAgentId = 1; // Start from 1 (0 reserved for "not registered")
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Core Functions
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * @dev Register a new agent. Mints an NFT to the caller.
@@ -72,21 +58,8 @@ contract IdentityRegistry is
         bytes32 registrationHash
     ) external returns (uint256 agentId) {
         require(bytes(registrationUri).length > 0, "Registration URI required");
-        require(addressToAgentId[msg.sender] == 0, "Already registered");
-
-        agentId = _nextAgentId++;
-
-        _safeMint(msg.sender, agentId);
-        _setTokenURI(agentId, registrationUri);
-
-        addressToAgentId[msg.sender] = agentId;
-
-        registrations[agentId] = AgentRegistration({
-            registrationUri: registrationUri,
-            registrationHash: registrationHash,
-            registeredAt: block.timestamp,
-            lastUpdated: block.timestamp
-        });
+        
+        agentId = _registerAgent(msg.sender, registrationUri, registrationHash);
 
         emit AgentRegistered(
             agentId,
@@ -185,23 +158,7 @@ contract IdentityRegistry is
         string calldata _tokenURI,
         MetadataEntry[] calldata metadata
     ) external returns (uint256 agentId) {
-        require(addressToAgentId[msg.sender] == 0, "Already registered");
-
-        agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
-
-        if (bytes(_tokenURI).length > 0) {
-            _setTokenURI(agentId, _tokenURI);
-        }
-
-        addressToAgentId[msg.sender] = agentId;
-
-        registrations[agentId] = AgentRegistration({
-            registrationUri: _tokenURI,
-            registrationHash: bytes32(0),
-            registeredAt: block.timestamp,
-            lastUpdated: block.timestamp
-        });
+        agentId = _registerAgent(msg.sender, _tokenURI, bytes32(0));
 
         // Set each metadata entry
         for (uint256 i = 0; i < metadata.length; i++) {
@@ -225,24 +182,7 @@ contract IdentityRegistry is
     function register(
         string calldata _tokenURI
     ) external returns (uint256 agentId) {
-        require(addressToAgentId[msg.sender] == 0, "Already registered");
-
-        agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
-
-        if (bytes(_tokenURI).length > 0) {
-            _setTokenURI(agentId, _tokenURI);
-        }
-
-        addressToAgentId[msg.sender] = agentId;
-
-        registrations[agentId] = AgentRegistration({
-            registrationUri: _tokenURI,
-            registrationHash: bytes32(0),
-            registeredAt: block.timestamp,
-            lastUpdated: block.timestamp
-        });
-
+        agentId = _registerAgent(msg.sender, _tokenURI, bytes32(0));
         emit Registered(agentId, _tokenURI, msg.sender);
     }
 
@@ -251,20 +191,7 @@ contract IdentityRegistry is
      * @return agentId The newly minted agent ID
      */
     function register() external returns (uint256 agentId) {
-        require(addressToAgentId[msg.sender] == 0, "Already registered");
-
-        agentId = _nextAgentId++;
-        _safeMint(msg.sender, agentId);
-
-        addressToAgentId[msg.sender] = agentId;
-
-        registrations[agentId] = AgentRegistration({
-            registrationUri: "",
-            registrationHash: bytes32(0),
-            registeredAt: block.timestamp,
-            lastUpdated: block.timestamp
-        });
-
+        agentId = _registerAgent(msg.sender, "", bytes32(0));
         emit Registered(agentId, "", msg.sender);
     }
 
@@ -317,5 +244,38 @@ contract IdentityRegistry is
         bytes4 interfaceId
     ) public view override(ERC721, ERC721URIStorage) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Internal Helper Functions
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Internal registration logic
+     */
+    function _registerAgent(
+        address registrant,
+        string memory uri,
+        bytes32 hash
+    ) private returns (uint256) {
+        require(addressToAgentId[registrant] == 0, "Already registered");
+
+        uint256 agentId = _nextAgentId++;
+        _safeMint(registrant, agentId);
+
+        if (bytes(uri).length > 0) {
+            _setTokenURI(agentId, uri);
+        }
+
+        addressToAgentId[registrant] = agentId;
+
+        registrations[agentId] = AgentRegistration({
+            registrationUri: uri,
+            registrationHash: hash,
+            registeredAt: block.timestamp,
+            lastUpdated: block.timestamp
+        });
+
+        return agentId;
     }
 }

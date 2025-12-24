@@ -18,8 +18,8 @@ describe("IdentityRegistry Interface Completeness", function () {
         identityRegistry = await ethers.getContractAt("IIdentityRegistry", await identityRegistryContract.getAddress());
     });
 
-    it("should fail to get addressToAgentId due to missing getter in interface", async function () {
-        // This test is expected to fail because 'addressToAgentId(address)' is not in the IIdentityRegistry interface
-        await expect(identityRegistry.addressToAgentId(owner.address)).to.be.revertedWith("identityRegistry.addressToAgentId is not a function");
+    it("should get agentId for an address from the interface", async function () {
+        const agentId = await identityRegistry.addressToAgentId(owner.address);
+        expect(agentId).to.equal(0); // Initially 0
     });
 });

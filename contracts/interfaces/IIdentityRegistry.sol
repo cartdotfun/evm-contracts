@@ -18,6 +18,13 @@ interface IIdentityRegistry {
         bytes value;
     }
 
+    struct AgentRegistration {
+        string registrationUri; // Points to off-chain registration JSON
+        bytes32 registrationHash; // Commitment hash for data integrity
+        uint256 registeredAt;
+        uint256 lastUpdated;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Events
     // ═══════════════════════════════════════════════════════════════════════
@@ -35,9 +42,33 @@ interface IIdentityRegistry {
         bytes value
     );
 
+    event AgentRegistered(
+        uint256 indexed agentId,
+        address indexed owner,
+        string registrationUri,
+        bytes32 registrationHash
+    );
+
+    event AgentUpdated(
+        uint256 indexed agentId,
+        string registrationUri,
+        bytes32 registrationHash
+    );
+
     // ═══════════════════════════════════════════════════════════════════════
     // Registration Functions
     // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Register a new agent. Mints an NFT to the caller.
+     * @param registrationUri URI pointing to off-chain Agent Card JSON
+     * @param registrationHash Hash commitment of the registration data (optional if using IPFS)
+     * @return agentId The newly minted agent ID
+     */
+    function register(
+        string calldata registrationUri,
+        bytes32 registrationHash
+    ) external returns (uint256 agentId);
 
     /**
      * @dev Register with tokenURI and metadata entries
@@ -64,6 +95,18 @@ interface IIdentityRegistry {
      * @return agentId The newly minted agent ID
      */
     function register() external returns (uint256 agentId);
+
+    /**
+     * @dev Update an existing agent's registration data.
+     * @param agentId The agent ID to update
+     * @param registrationUri New URI pointing to updated Agent Card
+     * @param registrationHash New hash commitment
+     */
+    function update(
+        uint256 agentId,
+        string calldata registrationUri,
+        bytes32 registrationHash
+    ) external;
 
     // ═══════════════════════════════════════════════════════════════════════
     // Metadata Functions
@@ -119,4 +162,31 @@ interface IIdentityRegistry {
      * @return The count of registered agents
      */
     function totalAgents() external view returns (uint256);
+
+    /**
+     * @dev Get agent details by ID
+     * @param agentId The agent ID to query
+     * @return owner The agent's owner address
+     * @return registrationUri The agent's registration URI
+     * @return registrationHash The registration hash commitment
+     */
+    function getAgent(
+        uint256 agentId
+    )
+        external
+        view
+        returns (
+            address owner,
+            string memory registrationUri,
+            bytes32 registrationHash
+        );
+
+    function addressToAgentId(address owner) external view returns (uint256);
+
+    function registrations(uint256 agentId) external view returns (
+        string memory registrationUri,
+        bytes32 registrationHash,
+        uint256 registeredAt,
+        uint256 lastUpdated
+    );
 }
