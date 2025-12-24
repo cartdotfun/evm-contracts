@@ -13,6 +13,10 @@ import "./interfaces/IValidationBridge.sol";
  * with optional automatic fund release based on validation score.
  */
 contract ValidationBridge is Ownable, IValidationBridge {
+    // ═══════════════════════════════════════════════════════════════════════
+    // State Variables
+    // ═══════════════════════════════════════════════════════════════════════
+
     // Reference to TrustEngine
     address public trustEngine;
 
@@ -45,6 +49,10 @@ contract ValidationBridge is Ownable, IValidationBridge {
         trustEngine = _trustEngine;
         identityRegistry = _identityRegistry;
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Core Functions
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * @dev Get the identity registry address (ERC-8004 required)
