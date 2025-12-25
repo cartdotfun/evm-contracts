@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: MIT
+// @author: Lloyd Faulk
+// @author: Opus 4.5
+// @version: 1.0.0
+
 pragma solidity ^0.8.24;
 
 import "./ITrustEngine.sol";

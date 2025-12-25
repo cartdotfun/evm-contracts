@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// @author: Lloyd Faulk <hey@cart.fun> & Opus 4.5
+// @author: Lloyd Faulk
+// @author: Opus 4.5
 // @version: 1.0.0
 
 pragma solidity ^0.8.24;

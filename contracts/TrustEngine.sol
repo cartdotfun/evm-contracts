@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // @author: Lloyd Faulk
 // @author: Opus 4.5
-// @contact: lloydfaulk@gmail.com
 // @version: 1.0.0
 
 pragma solidity ^0.8.24;
@@ -134,7 +133,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
         arbitrationFeeRecipient = _newRecipient;
         emit ArbitrationFeeRecipientUpdated(oldRecipient, _newRecipient);
     }
-    
+
     /**
      * @dev Set the authorized GatewaySession contract address.
      * @param _gatewaySession Address of the GatewaySession contract.
@@ -450,7 +449,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     // ═══════════════════════════════════════════════════════════════════════
     // Cross-Chain Settlement
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     /**
      * @dev Settle a session from Solana.
      * @param _sessionId Unique session identifier from Solana.
@@ -541,7 +540,7 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
             info.token
         );
     }
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // Internal Functions
     // ═══════════════════════════════════════════════════════════════════════

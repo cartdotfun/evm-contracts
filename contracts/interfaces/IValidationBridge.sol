@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: MIT
+// @author: Lloyd Faulk
+// @author: Opus 4.5
+// @version: 1.0.0
+
 pragma solidity ^0.8.24;
 
 /**
@@ -227,32 +231,50 @@ interface IValidationBridge {
 
     function identityRegistry() external view returns (address);
 
-    function authorizedValidators(address validator) external view returns (bool);
-
-    function validationRequests(bytes32 requestHash) external view returns (
-        bytes32 dealId,
-        uint256 agentId,
-        string memory requestUri,
-        bytes32 requestHashReturn,
-        uint256 requestedAt,
-        address requester,
-        address validatorAddress
-    );
-
-    function validationResponses(bytes32 requestHash) external view returns (
-        uint8 score,
-        string memory responseUri,
-        bytes32 responseHash,
-        bytes32 tag,
-        uint256 respondedAt,
+    function authorizedValidators(
         address validator
-    );
+    ) external view returns (bool);
+
+    function validationRequests(
+        bytes32 requestHash
+    )
+        external
+        view
+        returns (
+            bytes32 dealId,
+            uint256 agentId,
+            string memory requestUri,
+            bytes32 requestHashReturn,
+            uint256 requestedAt,
+            address requester,
+            address validatorAddress
+        );
+
+    function validationResponses(
+        bytes32 requestHash
+    )
+        external
+        view
+        returns (
+            uint8 score,
+            string memory responseUri,
+            bytes32 responseHash,
+            bytes32 tag,
+            uint256 respondedAt,
+            address validator
+        );
 
     function dealToRequestHash(bytes32 dealId) external view returns (bytes32);
 
-    function agentValidationRequests(uint256 agentId, uint256 index) external view returns (bytes32);
+    function agentValidationRequests(
+        uint256 agentId,
+        uint256 index
+    ) external view returns (bytes32);
 
-    function validatorRequests(address validator, uint256 index) external view returns (bytes32);
+    function validatorRequests(
+        address validator,
+        uint256 index
+    ) external view returns (bytes32);
 
     // Admin functions
 

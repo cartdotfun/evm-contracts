@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: MIT
+// @author: Lloyd Faulk
+// @author: Opus 4.5
+// @version: 1.0.0
+
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -58,7 +62,7 @@ contract IdentityRegistry is
         bytes32 registrationHash
     ) external returns (uint256 agentId) {
         require(bytes(registrationUri).length > 0, "Registration URI required");
-        
+
         agentId = _registerAgent(msg.sender, registrationUri, registrationHash);
 
         emit AgentRegistered(
