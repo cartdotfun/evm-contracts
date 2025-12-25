@@ -60,9 +60,11 @@ interface IIdentityRegistry {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Register a new agent. Mints an NFT to the caller.
-     * @param registrationUri URI pointing to off-chain Agent Card JSON
-     * @param registrationHash Hash commitment of the registration data (optional if using IPFS)
+     * @notice Register a new agent with full verification support.
+     * @dev Use case: When you have off-chain data (JSON Agent Card) AND want to verify integrity.
+     *      The hash commitment allows verification that the off-chain data hasn't been tampered with.
+     * @param registrationUri URI pointing to off-chain Agent Card JSON (IPFS, HTTPS, etc.)
+     * @param registrationHash Hash commitment of the registration data for integrity verification
      * @return agentId The newly minted agent ID
      */
     function register(
@@ -71,9 +73,11 @@ interface IIdentityRegistry {
     ) external returns (uint256 agentId);
 
     /**
-     * @dev Register with tokenURI and metadata entries
+     * @notice Register with tokenURI and on-chain metadata entries.
+     * @dev Use case: When you want both off-chain data AND on-chain metadata stored.
+     *      On-chain metadata is useful for indexing, capability flags, or frequently accessed attributes.
      * @param tokenURI URI pointing to off-chain registration JSON
-     * @param metadata Array of key-value metadata entries
+     * @param metadata Array of key-value metadata entries to store on-chain
      * @return agentId The newly minted agent ID
      */
     function register(
@@ -82,7 +86,9 @@ interface IIdentityRegistry {
     ) external returns (uint256 agentId);
 
     /**
-     * @dev Register with tokenURI only
+     * @notice Register with tokenURI only.
+     * @dev Use case: Simple registration with just a pointer to off-chain data.
+     *      Ideal when hash verification isn't needed (e.g., if you trust IPFS content addressing).
      * @param tokenURI URI pointing to off-chain registration JSON
      * @return agentId The newly minted agent ID
      */
@@ -91,7 +97,9 @@ interface IIdentityRegistry {
     ) external returns (uint256 agentId);
 
     /**
-     * @dev Register without URI (minimal registration)
+     * @notice Minimal registration - just mint the agent NFT.
+     * @dev Use case: Bare-bones registration when you want to get an agentId immediately
+     *      and add metadata/URI later via setMetadata() or update().
      * @return agentId The newly minted agent ID
      */
     function register() external returns (uint256 agentId);
@@ -183,10 +191,15 @@ interface IIdentityRegistry {
 
     function addressToAgentId(address owner) external view returns (uint256);
 
-    function registrations(uint256 agentId) external view returns (
-        string memory registrationUri,
-        bytes32 registrationHash,
-        uint256 registeredAt,
-        uint256 lastUpdated
-    );
+    function registrations(
+        uint256 agentId
+    )
+        external
+        view
+        returns (
+            string memory registrationUri,
+            bytes32 registrationHash,
+            uint256 registeredAt,
+            uint256 lastUpdated
+        );
 }
