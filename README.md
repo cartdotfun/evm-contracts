@@ -2,6 +2,9 @@
 
 EVM smart contracts for Cart Protocol's Machine 2 Machine (M2M) commerce infrastructure.
 
+> [!WARNING]
+> **Unaudited Contracts**: These contracts have not been audited and should not be used in production. Use at your own risk. An audit is planned before mainnet deployment.
+
 ## Architecture
 
 ```
