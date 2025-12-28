@@ -50,6 +50,10 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
     // Index of session in providerSessions array (for efficient removal)
     mapping(bytes32 => uint256) private sessionIndex;
 
+    // Usage syncer: authorized address that can record usage on behalf of providers
+    // Enables automated sync without requiring provider private keys
+    address public usageSyncer;
+
     constructor(
         address _trustEngine,
         address _initialOwner
@@ -69,6 +73,17 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
         require(_trustEngine != address(0), "Invalid TrustEngine address");
         trustEngine = ITrustEngine(_trustEngine);
         emit TrustEngineUpdated(_trustEngine);
+    }
+
+    /**
+     * @dev Set the usage syncer address (only owner)
+     *      The syncer can call recordUsage on behalf of any provider.
+     *      Set to address(0) to disable syncer functionality.
+     * @param _syncer Address of the syncer (can be gateway-proxy server wallet)
+     */
+    function setUsageSyncer(address _syncer) external onlyOwner {
+        usageSyncer = _syncer;
+        emit UsageSyncerUpdated(_syncer);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -226,8 +241,8 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
         require(session.state == SessionState.ACTIVE, "Session not active");
         require(block.timestamp < session.expiresAt, "Session expired");
         require(
-            msg.sender == session.provider,
-            "Only provider can record usage"
+            msg.sender == session.provider || msg.sender == usageSyncer,
+            "Only provider or syncer can record usage"
         );
 
         uint256 newUsed = session.usedAmount + _amount;

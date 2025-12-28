@@ -48,6 +48,7 @@ interface IGatewaySession {
 
     event SessionCancelled(bytes32 indexed sessionId, uint256 refunded);
     event SessionRenewed(bytes32 indexed sessionId, uint256 newExpiresAt);
+    event UsageSyncerUpdated(address indexed newSyncer);
 
     // ═══════════════════════════════════════════════════════════════════════
     // Data Structures
@@ -79,7 +80,11 @@ interface IGatewaySession {
 
     function setTrustEngine(address _trustEngine) external;
 
+    function setUsageSyncer(address _syncer) external;
+
     function trustEngine() external view returns (ITrustEngine);
+
+    function usageSyncer() external view returns (address);
 
     // ═══════════════════════════════════════════════════════════════════════
     // Gateway Registry Functions
