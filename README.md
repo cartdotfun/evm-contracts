@@ -71,7 +71,7 @@ npm run deploy:sepolia
 | Contract | Address |
 |----------|---------|
 | TrustEngine | `0x1E43578CB0486a036dABcf5b9E31a037b6C27E96` |
-| GatewaySession | `0x9e1C3f4c1E14C19cd854F592dE6b3442B5a6A329` |
+| GatewaySession | `0x726BFE36697a3E3D1d14d588407d4534338D513c` |
 | IdentityRegistry | `0xAE0Edd86230532d94Ff50a9dE923bCe81Cb8331C` |
 | ReputationRegistry | `0xCCdBaE4be2FD7983cA2a24524b05BF356E4395E1` |
 | ValidationBridge | `0xC6db64c7cbA9D8747d18b3a80fE4BAac579d2d77` |
