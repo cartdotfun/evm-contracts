@@ -8,6 +8,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -17,7 +18,7 @@ import "./interfaces/ITrustEngine.sol";
  * @title TrustEngine
  * @dev Singleton Vault for M2M Economy. Handles internal accounting and atomic deals.
  */
-contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, ITrustEngine {
+contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable, ITrustEngine {
     using SafeERC20 for IERC20;
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -43,6 +44,13 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
     address public solanaRelay;
     address public solanaSessionToken;
 
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -54,6 +62,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
      */
     function initialize(address _initialOwner) public initializer {
         __Ownable_init(_initialOwner);
+        __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
     }
@@ -69,6 +78,20 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
     // ═══════════════════════════════════════════════════════════════════════
     // Admin Functions
     // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Triggers stopped state.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @dev Returns to normal state.
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     /**
      * @dev Sets the arbiter address.
@@ -174,7 +197,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
     function deposit(
         address _token,
         uint256 _amount
-    ) external payable nonReentrant {
+    ) external payable nonReentrant whenNotPaused {
         if (_amount == 0) revert InvalidAmount();
 
         if (_token == address(0)) {
@@ -193,7 +216,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
      * @param _token Token address (use address(0) for ETH).
      * @param _amount Amount to withdraw.
      */
-    function withdraw(address _token, uint256 _amount) external nonReentrant {
+    function withdraw(address _token, uint256 _amount) external nonReentrant whenNotPaused {
         if (balances[msg.sender][_token] < _amount)
             revert InsufficientBalance();
 
@@ -231,7 +254,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
         bytes calldata _metadata,
         bytes32 _parentDealId,
         uint256 _expiresAt
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (deals[_dealId].state != DealState.NONE) revert DealAlreadyExists();
         if (balances[msg.sender][_token] < _amount)
             revert InsufficientBalance();
@@ -294,7 +317,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
     function submitWork(
         bytes32 _dealId,
         string calldata _resultHash
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED) revert InvalidDealState();
         if (msg.sender != deal.seller) revert Unauthorized();
@@ -309,7 +332,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
      * @dev Raise a dispute.
      * @param _dealId Deal identifier.
      */
-    function raiseDispute(bytes32 _dealId) external nonReentrant {
+    function raiseDispute(bytes32 _dealId) external nonReentrant whenNotPaused {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
             revert InvalidDealState();
@@ -330,7 +353,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
         bytes32 _dealId,
         bool _releaseToSeller,
         string calldata _judgmentCid
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.DISPUTE) revert InvalidDealState();
         if (msg.sender != arbiter) revert Unauthorized();
@@ -354,7 +377,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
      * @dev Release funds to seller.
      * @param _dealId Deal identifier.
      */
-    function release(bytes32 _dealId) external nonReentrant {
+    function release(bytes32 _dealId) external nonReentrant whenNotPaused {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
             revert InvalidDealState();
@@ -379,7 +402,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
      * @dev Refund funds to buyer.
      * @param _dealId Deal identifier.
      */
-    function refund(bytes32 _dealId) external nonReentrant {
+    function refund(bytes32 _dealId) external nonReentrant whenNotPaused {
         Deal storage deal = deals[_dealId];
         if (deal.state != DealState.LOCKED && deal.state != DealState.VERIFYING)
             revert InvalidDealState();
@@ -410,7 +433,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
         address _provider,
         address _token,
         uint256 _amount
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (msg.sender != gatewaySession) revert Unauthorized();
         if (sessionLocks[_sessionId] != 0) revert SessionAlreadyExists();
         if (balances[_agent][_token] < _amount) revert InsufficientBalance();
@@ -437,7 +460,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
     function unlockSession(
         bytes32 _sessionId,
         uint256 _usedAmount
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (msg.sender != gatewaySession) revert Unauthorized();
 
         uint256 lockedAmount = sessionLocks[_sessionId];
@@ -481,7 +504,7 @@ contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, Reen
         address _agent,
         address _provider,
         uint256 _amount
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (msg.sender != solanaRelay) revert Unauthorized();
         if (processedSolanaSettlements[_sessionId]) revert AlreadyProcessed();
         if (solanaSessionToken == address(0)) revert TokenNotConfigured();

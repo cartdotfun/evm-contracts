@@ -2,12 +2,12 @@
   "chainId": 84532,
   "network": "base-sepolia",
   "contracts": {
-    "cartToken": "0x376ed9790A26333DB370678726d6fc742892D6bb",
-    "identityRegistry": "0x05775d7b13EC3aCa83dFc81DD168Bd71c216afaC",
-    "trustEngine": "0xDf9091965E08b9B50A09C2d42206f3d0124b9444",
-    "reputationRegistry": "0x40dd349F9741c28969520D0382a53Eb00a22295a",
-    "validationBridge": "0xe7634F08D4BD53C65E64E6DF05cc25a96d3A9C21",
-    "gatewaySession": "0xfd07a99c13146c409622E44bcC545A30A3C5901C"
+    "cartToken": "0xf18EC0F37032721C857DCD2B2b4952Ba0385468e",
+    "identityRegistry": "0xF8fFC6D7a5dbD318Cd0caB2F552DE802072219ae",
+    "trustEngine": "0x6e38DDA96E6D2fFb9e54Ba633408b3911bc0CeeC",
+    "reputationRegistry": "0xBd41466d8614D063DE562E885f7131EE1dCfB390",
+    "validationBridge": "0x0f1494da7a2E42017fd2cf85D2f67Df6f174aEC9",
+    "gatewaySession": "0x35657AbE9055a906E6d5E7f61DeBb6E0Be42A905"
   },
   "tokens": {
     "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"

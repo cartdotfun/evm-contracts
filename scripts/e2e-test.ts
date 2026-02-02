@@ -7,6 +7,7 @@ import {
   keccak256,
   toBytes,
   decodeEventLog,
+  type Address,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
@@ -324,6 +325,25 @@ class E2ETestRunner {
   private results: TestResult[] = [];
   private isMultiParty: boolean;
 
+  private nonceCursor = new Map<Address, number>();
+
+  private async takeNonce(address: Address): Promise<number> {
+    const cached = this.nonceCursor.get(address);
+    if (cached !== undefined) {
+      this.nonceCursor.set(address, cached + 1);
+      return cached;
+    }
+
+    const chainNonce = await this.publicClient.getTransactionCount({
+      address,
+      blockTag: "pending",
+    });
+
+    const n = typeof chainNonce === "bigint" ? Number(chainNonce) : chainNonce;
+    this.nonceCursor.set(address, n + 1);
+    return n;
+  }
+
   constructor() {
     const ownerKey = process.env.PRIVATE_KEY;
     if (!ownerKey) throw new Error("PRIVATE_KEY not set in .env");
@@ -608,6 +628,7 @@ class E2ETestRunner {
           abi: ERC20_ABI,
           functionName: "approve",
           args: [CONTRACTS.TRUST_ENGINE, parseUnits("1000", 6)],
+          nonce: await this.takeNonce(this.agentAccount.address),
         });
         await this.publicClient.waitForTransactionReceipt({ hash });
         console.log(`    Tx: ${hash}`);
@@ -631,6 +652,7 @@ class E2ETestRunner {
           abi: TRUST_ENGINE_ABI,
           functionName: "deposit",
           args: [CONTRACTS.USDC, depositAmount],
+          nonce: await this.takeNonce(this.agentAccount.address),
         });
         await this.publicClient.waitForTransactionReceipt({ hash });
         console.log(`    Tx: ${hash}`);
@@ -646,6 +668,7 @@ class E2ETestRunner {
         abi: GATEWAY_SESSION_ABI,
         functionName: "registerGateway",
         args: [testSlug, pricePerRequest],
+        nonce: await this.takeNonce(this.providerAccount.address),
       });
       await this.publicClient.waitForTransactionReceipt({ hash });
       console.log(`    Slug: ${testSlug}, Tx: ${hash}`);
@@ -675,6 +698,7 @@ class E2ETestRunner {
         abi: GATEWAY_SESSION_ABI,
         functionName: "openSession",
         args: [testSlug, CONTRACTS.USDC, depositAmount, 3600n], // 1 hour
+        nonce: await this.takeNonce(this.agentAccount.address),
       });
       const receipt = await this.publicClient.waitForTransactionReceipt({
         hash,
@@ -722,6 +746,7 @@ class E2ETestRunner {
         abi: GATEWAY_SESSION_ABI,
         functionName: "recordUsage",
         args: [sessionId!, usageAmount],
+        nonce: await this.takeNonce(this.providerAccount.address),
       });
       await this.publicClient.waitForTransactionReceipt({ hash });
       console.log(
@@ -763,6 +788,7 @@ class E2ETestRunner {
         abi: GATEWAY_SESSION_ABI,
         functionName: "settleSession",
         args: [sessionId!],
+        nonce: await this.takeNonce(this.agentAccount.address),
       });
       await this.publicClient.waitForTransactionReceipt({ hash });
       console.log(`    Tx: ${hash}`);

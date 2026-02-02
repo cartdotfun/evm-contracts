@@ -6,6 +6,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -20,7 +21,7 @@ import "./interfaces/ITrustEngine.sol";
  *      Sessions allow agents to pre-fund API usage and settle in batches.
  *      Works with TrustEngine for balance management.
  */
-contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IGatewaySession {
+contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable, IGatewaySession {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -56,6 +57,13 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     // Enables automated sync without requiring provider private keys
     address public usageSyncer;
 
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -71,6 +79,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         address _initialOwner
     ) public initializer {
         __Ownable_init(_initialOwner);
+        __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
         trustEngine = ITrustEngine(_trustEngine);
@@ -87,6 +96,20 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     // ═══════════════════════════════════════════════════════════════════════
     // Admin Functions
     // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * @dev Triggers stopped state.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @dev Returns to normal state.
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     /**
      * @dev Update TrustEngine address (only owner)
@@ -121,7 +144,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function registerGateway(
         string calldata _slug,
         uint256 _pricePerRequest
-    ) external {
+    ) external whenNotPaused {
         require(bytes(_slug).length > 0, "Slug cannot be empty");
         require(bytes(_slug).length <= MAX_SLUG_LENGTH, "Slug too long");
         require(gateways[_slug] == address(0), "Gateway already exists");
@@ -139,7 +162,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function updateGatewayPrice(
         string calldata _slug,
         uint256 _newPrice
-    ) external {
+    ) external whenNotPaused {
         require(gateways[_slug] == msg.sender, "Not gateway owner");
         require(_newPrice > 0, "Price must be > 0");
 
@@ -151,7 +174,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      * @dev Deactivate a gateway (only gateway owner)
      * @notice Cannot deactivate if there are active sessions for this provider
      */
-    function deactivateGateway(string calldata _slug) external {
+    function deactivateGateway(string calldata _slug) external whenNotPaused {
         require(gateways[_slug] == msg.sender, "Not gateway owner");
         require(
             activeSessionsByProvider[msg.sender] == 0,
@@ -181,7 +204,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
         address _token,
         uint256 _deposit,
         uint256 _duration
-    ) external nonReentrant returns (bytes32 sessionId) {
+    ) external nonReentrant whenNotPaused returns (bytes32 sessionId) {
         address provider = gateways[_gatewaySlug];
         require(provider != address(0), "Gateway not found");
         require(_token != address(0), "Invalid token address");
@@ -259,7 +282,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function recordUsage(
         bytes32 _sessionId,
         uint256 _amount
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Session storage session = sessions[_sessionId];
         require(session.state == SessionState.ACTIVE, "Session not active");
         require(block.timestamp < session.expiresAt, "Session expired");
@@ -281,7 +304,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      *      Can be called by agent, provider, or anyone after expiry
      * @param _sessionId Session identifier
      */
-    function settleSession(bytes32 _sessionId) external nonReentrant {
+    function settleSession(bytes32 _sessionId) external nonReentrant whenNotPaused {
         Session storage session = sessions[_sessionId];
         require(session.state == SessionState.ACTIVE, "Session not active");
         require(
@@ -314,7 +337,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
      *      Used for emergency cancellation
      * @param _sessionId Session identifier
      */
-    function cancelSession(bytes32 _sessionId) external nonReentrant {
+    function cancelSession(bytes32 _sessionId) external nonReentrant whenNotPaused {
         Session storage session = sessions[_sessionId];
         require(session.state == SessionState.ACTIVE, "Session not active");
         require(msg.sender == session.agent, "Only agent can cancel");
@@ -346,7 +369,7 @@ contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, R
     function renewSession(
         bytes32 _sessionId,
         uint256 _extension
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Session storage session = sessions[_sessionId];
         require(session.state == SessionState.ACTIVE, "Session not active");
         require(msg.sender == session.agent, "Only agent can renew");

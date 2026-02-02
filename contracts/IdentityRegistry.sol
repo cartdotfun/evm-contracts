@@ -17,6 +17,12 @@ import "./interfaces/IIdentityRegistry.sol";
 /**
  * @title IdentityRegistry
  * @dev ERC-8004 compliant Identity Registry for AI Agents (Upgradeable)
+ *
+ * Each agent receives a unique AgentID (ERC-721 NFT) that maps to:
+ * - Their Ethereum address
+ * - An off-chain registration file containing metadata about capabilities
+ *
+ * Supports on-chain metadata via getMetadata/setMetadata per ERC-8004 spec.
  * Includes Staking logic for Trust Score.
  */
 contract IdentityRegistry is
@@ -52,6 +58,13 @@ contract IdentityRegistry is
     event Staked(uint256 indexed agentId, uint256 amount);
     event Unstaked(uint256 indexed agentId, uint256 amount);
     event StakingTokenUpdated(address token);
+
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

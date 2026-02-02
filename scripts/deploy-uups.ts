@@ -15,6 +15,10 @@ async function main() {
   const network = getNetworkFromHardhatName(hre.network.name);
   const existing = readDeployment(network);
 
+  const delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+  const DELAY_MS = 5000;
+
   // 1. Deploy CartToken (Standard ERC20, not upgradeable)
   console.log("Deploying CartToken...");
   const CartToken = await ethers.getContractFactory("CartToken");
@@ -22,6 +26,7 @@ async function main() {
   await cartToken.waitForDeployment();
   const cartTokenAddress = await cartToken.getAddress();
   console.log("CartToken deployed to:", cartTokenAddress);
+  await delay(DELAY_MS);
 
   // 2. Deploy IdentityRegistry (UUPS)
   console.log("Deploying IdentityRegistry (UUPS)...");
@@ -37,6 +42,7 @@ async function main() {
   await identityRegistry.waitForDeployment();
   const identityRegistryAddress = await identityRegistry.getAddress();
   console.log("IdentityRegistry deployed to:", identityRegistryAddress);
+  await delay(DELAY_MS);
 
   // 3. Deploy TrustEngine (UUPS)
   console.log("Deploying TrustEngine (UUPS)...");
@@ -52,6 +58,7 @@ async function main() {
   await trustEngine.waitForDeployment();
   const trustEngineAddress = await trustEngine.getAddress();
   console.log("TrustEngine deployed to:", trustEngineAddress);
+  await delay(DELAY_MS);
 
   // 4. Deploy ReputationRegistry (UUPS)
   console.log("Deploying ReputationRegistry (UUPS)...");
@@ -70,6 +77,7 @@ async function main() {
   await reputationRegistry.waitForDeployment();
   const reputationRegistryAddress = await reputationRegistry.getAddress();
   console.log("ReputationRegistry deployed to:", reputationRegistryAddress);
+  await delay(DELAY_MS);
 
   // 5. Deploy ValidationBridge (UUPS)
   console.log("Deploying ValidationBridge (UUPS)...");
@@ -86,6 +94,7 @@ async function main() {
   await validationBridge.waitForDeployment();
   const validationBridgeAddress = await validationBridge.getAddress();
   console.log("ValidationBridge deployed to:", validationBridgeAddress);
+  await delay(DELAY_MS);
 
   // 6. Deploy GatewaySession (UUPS)
   console.log("Deploying GatewaySession (UUPS)...");
@@ -101,6 +110,7 @@ async function main() {
   await gatewaySession.waitForDeployment();
   const gatewaySessionAddress = await gatewaySession.getAddress();
   console.log("GatewaySession deployed to:", gatewaySessionAddress);
+  await delay(DELAY_MS);
 
   // 7. Post-Deployment Configuration
   console.log("Configuring contracts...");

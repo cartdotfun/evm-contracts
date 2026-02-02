@@ -1,77 +1,121 @@
-import hre from "hardhat";
-import { getNetworkFromHardhatName, readDeployment, requireDeployedAddress } from "./lib/deployments";
+import { ethers } from "hardhat";
+import {
+  readDeployment,
+  requireDeployedAddress,
+  getNetworkFromEnv,
+} from "./lib/deployments";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const DELAY_MS = 5000;
 
 async function main() {
-    const { ethers } = hre;
-    const [deployer] = await ethers.getSigners();
-    console.log(`Configuring TrustEngine with deployer: ${deployer.address}`);
+  const deployment = readDeployment(getNetworkFromEnv());
+  const [deployer] = await ethers.getSigners();
+  console.log(
+    "Configuring contracts on",
+    deployment.network,
+    "with account:",
+    deployer.address,
+  );
 
-    const network = getNetworkFromHardhatName(hre.network.name);
-    const deployment = readDeployment(network);
-    const trustEngineAddress = requireDeployedAddress(deployment.contracts.trustEngine, "TrustEngine");
-    const validationBridgeAddress = requireDeployedAddress(deployment.contracts.validationBridge, "ValidationBridge");
-    const gatewaySessionAddress = requireDeployedAddress(deployment.contracts.gatewaySession, "GatewaySession");
+  const trustEngineAddr = requireDeployedAddress(
+    deployment.contracts.trustEngine,
+    "TrustEngine",
+  );
+  const identityRegistryAddr = requireDeployedAddress(
+    deployment.contracts.identityRegistry,
+    "IdentityRegistry",
+  );
+  const reputationRegistryAddr = requireDeployedAddress(
+    deployment.contracts.reputationRegistry,
+    "ReputationRegistry",
+  );
+  const validationBridgeAddr = requireDeployedAddress(
+    deployment.contracts.validationBridge,
+    "ValidationBridge",
+  );
+  const gatewaySessionAddr = requireDeployedAddress(
+    deployment.contracts.gatewaySession,
+    "GatewaySession",
+  );
+  const usdcAddr = deployment.tokens.usdc;
 
-    const TrustEngine = await ethers.getContractFactory("TrustEngine");
-    const trustEngine = TrustEngine.attach(trustEngineAddress);
+  const TrustEngine = await ethers.getContractFactory("TrustEngine");
+  const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
+  const ReputationRegistry = await ethers.getContractFactory(
+    "ReputationRegistry",
+  );
+  const ValidationBridge = await ethers.getContractFactory("ValidationBridge");
+  const GatewaySession = await ethers.getContractFactory("GatewaySession");
 
-    console.log("Setting ValidationBridge...");
-    try {
-        const tx1 = await trustEngine.setValidationBridge(validationBridgeAddress);
-        await tx1.wait();
-        console.log("✅ ValidationBridge set");
-    } catch (e) {
-        console.log("⚠️ Failed to set ValidationBridge (maybe already set or nonce issue):", e);
-    }
-    await sleep(5000);
+  const trustEngine = TrustEngine.attach(trustEngineAddr);
+  const identityRegistry = IdentityRegistry.attach(identityRegistryAddr);
+  const reputationRegistry = ReputationRegistry.attach(reputationRegistryAddr);
+  const validationBridge = ValidationBridge.attach(validationBridgeAddr);
+  const gatewaySession = GatewaySession.attach(gatewaySessionAddr);
 
-    console.log("Setting GatewaySession...");
-    try {
-        const tx2 = await trustEngine.setGatewaySession(gatewaySessionAddress);
-        await tx2.wait();
-        console.log("✅ GatewaySession set");
-    } catch (e) {
-        console.log("⚠️ Failed to set GatewaySession:", e);
-    }
-    await sleep(5000);
+  // 1. Set Protocol Fee
+  console.log("Setting Protocol Fees...");
+  try {
+    const tx = await trustEngine.setProtocolFee(200); // 2%
+    console.log("Tx sent:", tx.hash);
+    await tx.wait();
+    console.log("Protocol fee set.");
+  } catch (e: any) {
+    console.log("Skipping protocol fee (or failed):", e.message);
+  }
+  await delay(DELAY_MS);
 
-    console.log("Setting Arbiter...");
-    try {
-        const tx3 = await trustEngine.setArbiter(deployer.address);
-        await tx3.wait();
-        console.log("✅ Arbiter set");
-    } catch (e) {
-        console.log("⚠️ Failed to set Arbiter:", e);
-    }
-    await sleep(5000);
+  // 3. Set Staking Token on IdentityRegistry
+  console.log("Setting Staking Token on IdentityRegistry...");
+  try {
+    const tx = await identityRegistry.setStakingToken(usdcAddr);
+    console.log("Tx sent:", tx.hash);
+    await tx.wait();
+    console.log("Staking token set on IdentityRegistry.");
+  } catch (e: any) {
+    console.log(
+      "Skipping IdentityRegistry staking token (or failed):",
+      e.message,
+    );
+  }
+  await delay(DELAY_MS);
 
-    console.log("Setting Protocol Fee...");
-    try {
-        const tx4 = await trustEngine.setProtocolFee(25);
-        await tx4.wait();
-        console.log("✅ Protocol Fee set");
-    } catch (e) {
-        console.log("⚠️ Failed to set Protocol Fee:", e);
-    }
-    await sleep(5000);
+  // 4. ReputationRegistry configuration (IdentityRegistry is set in initialize)
+  // No specific setTrustEngine on ReputationRegistry
 
-    console.log("Setting Protocol Fee Recipient...");
-    try {
-        const tx5 = await trustEngine.setProtocolFeeRecipient(deployer.address);
-        await tx5.wait();
-        console.log("✅ Protocol Fee Recipient set");
-    } catch (e) {
-        console.log("⚠️ Failed to set Protocol Fee Recipient:", e);
-    }
+  // 5. Set TrustEngine on ValidationBridge
+  console.log("Setting TrustEngine on ValidationBridge...");
+  try {
+    const tx = await validationBridge.setTrustEngine(trustEngineAddr);
+    console.log("Tx sent:", tx.hash);
+    await tx.wait();
+    console.log("ValidationBridge wired.");
+  } catch (e: any) {
+    console.log("Skipping ValidationBridge (or failed):", e.message);
+  }
+  await delay(DELAY_MS);
 
-    console.log("🎉 Configuration Complete!");
+  // 6. Ensure TrustEngine knows about ValidationBridge and GatewaySession
+  console.log("Ensuring TrustEngine permissions...");
+  try {
+    // We can't easily check if it's already set without a getter, but setValidationBridge is idempotent-ish
+    const tx1 = await trustEngine.setValidationBridge(validationBridgeAddr);
+    await tx1.wait();
+    console.log("ValidationBridge set on TrustEngine.");
+    await delay(DELAY_MS);
+
+    const tx2 = await trustEngine.setGatewaySession(gatewaySessionAddr);
+    await tx2.wait();
+    console.log("GatewaySession set on TrustEngine.");
+  } catch (e: any) {
+    console.log("Skipping permissions (or failed):", e.message);
+  }
+
+  console.log("Configuration complete!");
 }
 
-main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
