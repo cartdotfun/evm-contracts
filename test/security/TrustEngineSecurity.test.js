@@ -20,7 +20,8 @@ describe("TrustEngine Security Analysis", function () {
   const ATTACK_AMOUNT = ethers.parseEther("10");
 
   beforeEach(async function () {
-    [owner, attacker, victim, gateway, arbiter, solanaRelay] = await ethers.getSigners();
+    [owner, attacker, victim, gateway, arbiter, solanaRelay] =
+      await ethers.getSigners();
 
     // Deploy TrustEngine
     TrustEngine = await ethers.getContractFactory("TrustEngine");
@@ -38,7 +39,7 @@ describe("TrustEngine Security Analysis", function () {
     // Deploy Malicious Contract
     MaliciousReentrant = await ethers.getContractFactory("MaliciousReentrant");
     maliciousReentrant = await MaliciousReentrant.deploy(
-      await trustEngine.getAddress()
+      await trustEngine.getAddress(),
     );
     await maliciousReentrant.waitForDeployment();
 
@@ -53,10 +54,10 @@ describe("TrustEngine Security Analysis", function () {
     it("Should prevent reentrancy on withdraw", async function () {
       // Re-deploy a fresh malicious contract for this test to be clean
       const MaliciousReentrantFactory = await ethers.getContractFactory(
-        "MaliciousReentrant"
+        "MaliciousReentrant",
       );
       const badContract = await MaliciousReentrantFactory.deploy(
-        await trustEngine.getAddress()
+        await trustEngine.getAddress(),
       );
       await badContract.waitForDeployment();
 
@@ -84,8 +85,8 @@ describe("TrustEngine Security Analysis", function () {
             victim.address,
             attacker.address,
             await token.getAddress(),
-            ethers.parseEther("100")
-          )
+            ethers.parseEther("100"),
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "Unauthorized");
     });
 
@@ -99,8 +100,8 @@ describe("TrustEngine Security Analysis", function () {
             sessionId,
             victim.address,
             attacker.address,
-            ethers.parseEther("100")
-          )
+            ethers.parseEther("100"),
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "Unauthorized");
     });
 
@@ -125,33 +126,45 @@ describe("TrustEngine Security Analysis", function () {
           ethers.parseEther("100"),
           "0x",
           ethers.ZeroHash,
-          0
+          0,
         );
 
       // Attacker tries to resolve dispute
       await trustEngine.connect(victim).raiseDispute(dealId);
 
       await expect(
-        trustEngine.connect(attacker).resolveDispute(dealId, true, "cid")
+        trustEngine.connect(attacker).resolveDispute(dealId, true, "cid"),
       ).to.be.revertedWithCustomError(trustEngine, "Unauthorized");
     });
 
     it("Should prevent unauthorized owner functions", async function () {
       await expect(
-        trustEngine.connect(attacker).setProtocolFee(1000)
-      ).to.be.revertedWithCustomError(trustEngine, "OwnableUnauthorizedAccount");
+        trustEngine.connect(attacker).setProtocolFee(1000),
+      ).to.be.revertedWithCustomError(
+        trustEngine,
+        "OwnableUnauthorizedAccount",
+      );
 
       await expect(
-        trustEngine.connect(attacker).setProtocolFeeRecipient(attacker.address)
-      ).to.be.revertedWithCustomError(trustEngine, "OwnableUnauthorizedAccount");
+        trustEngine.connect(attacker).setProtocolFeeRecipient(attacker.address),
+      ).to.be.revertedWithCustomError(
+        trustEngine,
+        "OwnableUnauthorizedAccount",
+      );
 
       await expect(
-        trustEngine.connect(attacker).setArbiter(attacker.address)
-      ).to.be.revertedWithCustomError(trustEngine, "OwnableUnauthorizedAccount");
+        trustEngine.connect(attacker).setArbiter(attacker.address),
+      ).to.be.revertedWithCustomError(
+        trustEngine,
+        "OwnableUnauthorizedAccount",
+      );
 
       await expect(
-        trustEngine.connect(attacker).setSolanaRelay(attacker.address)
-      ).to.be.revertedWithCustomError(trustEngine, "OwnableUnauthorizedAccount");
+        trustEngine.connect(attacker).setSolanaRelay(attacker.address),
+      ).to.be.revertedWithCustomError(
+        trustEngine,
+        "OwnableUnauthorizedAccount",
+      );
     });
   });
 
@@ -174,7 +187,7 @@ describe("TrustEngine Security Analysis", function () {
         ethers.parseEther("100"),
         "0x",
         ethers.ZeroHash,
-        0
+        0,
       );
 
       // Normal flow
@@ -182,12 +195,12 @@ describe("TrustEngine Security Analysis", function () {
 
       // Attacker (seller) tries to submit work after release
       await expect(
-        trustEngine.connect(attacker).submitWork(dealId, "hash")
+        trustEngine.connect(attacker).submitWork(dealId, "hash"),
       ).to.be.revertedWithCustomError(trustEngine, "InvalidDealState");
 
       // Attacker tries to refund after release
       await expect(
-        trustEngine.connect(attacker).refund(dealId)
+        trustEngine.connect(attacker).refund(dealId),
       ).to.be.revertedWithCustomError(trustEngine, "InvalidDealState");
     });
 
@@ -212,7 +225,7 @@ describe("TrustEngine Security Analysis", function () {
           ethers.parseEther("100"),
           "0x",
           ethers.ZeroHash,
-          0
+          0,
         );
 
       // Attacker tries to create deal with same ID
@@ -226,8 +239,8 @@ describe("TrustEngine Security Analysis", function () {
             ethers.parseEther("10"),
             "0x",
             ethers.ZeroHash,
-            0
-          )
+            0,
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "DealAlreadyExists");
     });
 
@@ -253,7 +266,7 @@ describe("TrustEngine Security Analysis", function () {
           ethers.parseEther("100"),
           "0x",
           ethers.ZeroHash,
-          0
+          0,
         );
 
       // Attacker (Seller of parent) tries to create child deal
@@ -274,8 +287,8 @@ describe("TrustEngine Security Analysis", function () {
           ethers.parseEther("10"),
           "0x",
           parentDealId, // Linking to parent
-          0
-        )
+          0,
+        ),
       ).to.be.revertedWithCustomError(trustEngine, "Unauthorized");
     });
   });
@@ -286,7 +299,7 @@ describe("TrustEngine Security Analysis", function () {
       await expect(
         trustEngine
           .connect(attacker)
-          .deposit(await token.getAddress(), ethers.parseEther("9999999"))
+          .deposit(await token.getAddress(), ethers.parseEther("9999999")),
       ).to.be.reverted; // Reverts in ERC20 transfer
     });
 
@@ -294,7 +307,9 @@ describe("TrustEngine Security Analysis", function () {
       const maxUint = ethers.MaxUint256;
 
       await expect(
-        trustEngine.connect(attacker).deposit(await token.getAddress(), maxUint)
+        trustEngine
+          .connect(attacker)
+          .deposit(await token.getAddress(), maxUint),
       ).to.be.reverted;
     });
   });
@@ -306,8 +321,12 @@ describe("TrustEngine Security Analysis", function () {
     beforeEach(async function () {
       // Fund victim for Solana settlements
       await token.mint(victim.address, INITIAL_BALANCE);
-      await token.connect(victim).approve(await trustEngine.getAddress(), INITIAL_BALANCE);
-      await trustEngine.connect(victim).deposit(await token.getAddress(), INITIAL_BALANCE);
+      await token
+        .connect(victim)
+        .approve(await trustEngine.getAddress(), INITIAL_BALANCE);
+      await trustEngine
+        .connect(victim)
+        .deposit(await token.getAddress(), INITIAL_BALANCE);
     });
 
     it("Should prevent replay attacks on Solana settlements", async function () {
@@ -315,15 +334,20 @@ describe("TrustEngine Security Analysis", function () {
       const amount = ethers.parseUnits("100", 6);
 
       // First settlement succeeds
-      await trustEngine.connect(solanaRelay).settleFromSolana(
-        sessionId, victim.address, attacker.address, amount
-      );
+      await trustEngine
+        .connect(solanaRelay)
+        .settleFromSolana(sessionId, victim.address, attacker.address, amount);
 
       // Replay fails
       await expect(
-        trustEngine.connect(solanaRelay).settleFromSolana(
-          sessionId, victim.address, attacker.address, amount
-        )
+        trustEngine
+          .connect(solanaRelay)
+          .settleFromSolana(
+            sessionId,
+            victim.address,
+            attacker.address,
+            amount,
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "AlreadyProcessed");
     });
 
@@ -344,9 +368,9 @@ describe("TrustEngine Security Analysis", function () {
       const sessionId = ethers.keccak256(ethers.toUtf8Bytes("no-token"));
 
       await expect(
-        freshEngine.connect(solanaRelay).settleFromSolana(
-          sessionId, victim.address, attacker.address, 100
-        )
+        freshEngine
+          .connect(solanaRelay)
+          .settleFromSolana(sessionId, victim.address, attacker.address, 100),
       ).to.be.revertedWithCustomError(freshEngine, "TokenNotConfigured");
     });
 
@@ -355,9 +379,14 @@ describe("TrustEngine Security Analysis", function () {
       const excessAmount = INITIAL_BALANCE + 1n;
 
       await expect(
-        trustEngine.connect(solanaRelay).settleFromSolana(
-          sessionId, victim.address, attacker.address, excessAmount
-        )
+        trustEngine
+          .connect(solanaRelay)
+          .settleFromSolana(
+            sessionId,
+            victim.address,
+            attacker.address,
+            excessAmount,
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "InsufficientBalance");
     });
   });
@@ -368,27 +397,33 @@ describe("TrustEngine Security Analysis", function () {
   describe("6. Time-Lock Security", function () {
     beforeEach(async function () {
       await token.mint(victim.address, INITIAL_BALANCE);
-      await token.connect(victim).approve(await trustEngine.getAddress(), INITIAL_BALANCE);
-      await trustEngine.connect(victim).deposit(await token.getAddress(), INITIAL_BALANCE);
+      await token
+        .connect(victim)
+        .approve(await trustEngine.getAddress(), INITIAL_BALANCE);
+      await trustEngine
+        .connect(victim)
+        .deposit(await token.getAddress(), INITIAL_BALANCE);
     });
 
     it("Should prevent early release on time-locked deals", async function () {
       const dealId = ethers.keccak256(ethers.toUtf8Bytes("timelocked"));
       const futureTime = (await time.latest()) + 3600; // 1 hour from now
 
-      await trustEngine.connect(victim).createDeal(
-        dealId,
-        attacker.address,
-        await token.getAddress(),
-        ethers.parseEther("100"),
-        "0x",
-        ethers.ZeroHash,
-        futureTime
-      );
+      await trustEngine
+        .connect(victim)
+        .createDeal(
+          dealId,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("100"),
+          "0x",
+          ethers.ZeroHash,
+          futureTime,
+        );
 
       // Try to release before time-lock expires
       await expect(
-        trustEngine.connect(victim).release(dealId)
+        trustEngine.connect(victim).release(dealId),
       ).to.be.revertedWithCustomError(trustEngine, "DealTimeLocked");
     });
 
@@ -396,22 +431,26 @@ describe("TrustEngine Security Analysis", function () {
       const dealId = ethers.keccak256(ethers.toUtf8Bytes("timelocked-pass"));
       const futureTime = (await time.latest()) + 60; // 1 minute from now
 
-      await trustEngine.connect(victim).createDeal(
-        dealId,
-        attacker.address,
-        await token.getAddress(),
-        ethers.parseEther("100"),
-        "0x",
-        ethers.ZeroHash,
-        futureTime
-      );
+      await trustEngine
+        .connect(victim)
+        .createDeal(
+          dealId,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("100"),
+          "0x",
+          ethers.ZeroHash,
+          futureTime,
+        );
 
       // Fast forward past time-lock
       await time.increase(120);
 
       // Now release should work
-      await expect(trustEngine.connect(victim).release(dealId))
-        .to.emit(trustEngine, "DealReleased");
+      await expect(trustEngine.connect(victim).release(dealId)).to.emit(
+        trustEngine,
+        "DealReleased",
+      );
     });
 
     it("Should reject past expiry times on deal creation", async function () {
@@ -419,15 +458,17 @@ describe("TrustEngine Security Analysis", function () {
       const pastTime = (await time.latest()) - 1;
 
       await expect(
-        trustEngine.connect(victim).createDeal(
-          dealId,
-          attacker.address,
-          await token.getAddress(),
-          ethers.parseEther("100"),
-          "0x",
-          ethers.ZeroHash,
-          pastTime
-        )
+        trustEngine
+          .connect(victim)
+          .createDeal(
+            dealId,
+            attacker.address,
+            await token.getAddress(),
+            ethers.parseEther("100"),
+            "0x",
+            ethers.ZeroHash,
+            pastTime,
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "ExpiryMustBeFuture");
     });
   });
@@ -438,69 +479,79 @@ describe("TrustEngine Security Analysis", function () {
   describe("7. Dispute Resolution Security", function () {
     beforeEach(async function () {
       await token.mint(victim.address, INITIAL_BALANCE);
-      await token.connect(victim).approve(await trustEngine.getAddress(), INITIAL_BALANCE);
-      await trustEngine.connect(victim).deposit(await token.getAddress(), INITIAL_BALANCE);
+      await token
+        .connect(victim)
+        .approve(await trustEngine.getAddress(), INITIAL_BALANCE);
+      await trustEngine
+        .connect(victim)
+        .deposit(await token.getAddress(), INITIAL_BALANCE);
     });
 
     it("Should only allow buyer or seller to raise disputes", async function () {
       const dealId = ethers.keccak256(ethers.toUtf8Bytes("dispute-auth"));
 
-      await trustEngine.connect(victim).createDeal(
-        dealId,
-        attacker.address,
-        await token.getAddress(),
-        ethers.parseEther("100"),
-        "0x",
-        ethers.ZeroHash,
-        0
-      );
+      await trustEngine
+        .connect(victim)
+        .createDeal(
+          dealId,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("100"),
+          "0x",
+          ethers.ZeroHash,
+          0,
+        );
 
       // Third party tries to raise dispute
       const [, , , , , , thirdParty] = await ethers.getSigners();
       await expect(
-        trustEngine.connect(thirdParty).raiseDispute(dealId)
+        trustEngine.connect(thirdParty).raiseDispute(dealId),
       ).to.be.revertedWithCustomError(trustEngine, "Unauthorized");
     });
 
     it("Should prevent dispute on completed deals", async function () {
       const dealId = ethers.keccak256(ethers.toUtf8Bytes("completed-dispute"));
 
-      await trustEngine.connect(victim).createDeal(
-        dealId,
-        attacker.address,
-        await token.getAddress(),
-        ethers.parseEther("100"),
-        "0x",
-        ethers.ZeroHash,
-        0
-      );
+      await trustEngine
+        .connect(victim)
+        .createDeal(
+          dealId,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("100"),
+          "0x",
+          ethers.ZeroHash,
+          0,
+        );
 
       await trustEngine.connect(victim).release(dealId);
 
       await expect(
-        trustEngine.connect(victim).raiseDispute(dealId)
+        trustEngine.connect(victim).raiseDispute(dealId),
       ).to.be.revertedWithCustomError(trustEngine, "InvalidDealState");
     });
 
     it("Should prevent double dispute resolution", async function () {
       const dealId = ethers.keccak256(ethers.toUtf8Bytes("double-resolve"));
 
-      await trustEngine.connect(victim).createDeal(
-        dealId,
-        attacker.address,
-        await token.getAddress(),
-        ethers.parseEther("100"),
-        "0x",
-        ethers.ZeroHash,
-        0
-      );
+      await trustEngine
+        .connect(victim)
+        .createDeal(
+          dealId,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("100"),
+          "0x",
+          ethers.ZeroHash,
+          0,
+        );
 
       await trustEngine.connect(victim).raiseDispute(dealId);
       await trustEngine.connect(arbiter).resolveDispute(dealId, true, "cid");
 
       // Try to resolve again
       await expect(
-        trustEngine.connect(arbiter).resolveDispute(dealId, false, "cid2")
+        trustEngine.connect(arbiter).resolveDispute(dealId, false, "cid2"),
       ).to.be.revertedWithCustomError(trustEngine, "InvalidDealState");
     });
   });
@@ -511,7 +562,7 @@ describe("TrustEngine Security Analysis", function () {
   describe("8. Protocol Fee Security", function () {
     it("Should cap protocol fee at 10%", async function () {
       await expect(
-        trustEngine.setProtocolFee(1001) // 10.01%
+        trustEngine.setProtocolFee(1001), // 10.01%
       ).to.be.revertedWithCustomError(trustEngine, "FeeTooHigh");
     });
 
@@ -522,7 +573,7 @@ describe("TrustEngine Security Analysis", function () {
 
     it("Should prevent zero address as fee recipient", async function () {
       await expect(
-        trustEngine.setProtocolFeeRecipient(ethers.ZeroAddress)
+        trustEngine.setProtocolFeeRecipient(ethers.ZeroAddress),
       ).to.be.revertedWithCustomError(trustEngine, "InvalidAddress");
     });
   });
@@ -533,23 +584,39 @@ describe("TrustEngine Security Analysis", function () {
   describe("9. Session Lock Security", function () {
     beforeEach(async function () {
       await token.mint(victim.address, INITIAL_BALANCE);
-      await token.connect(victim).approve(await trustEngine.getAddress(), INITIAL_BALANCE);
-      await trustEngine.connect(victim).deposit(await token.getAddress(), INITIAL_BALANCE);
+      await token
+        .connect(victim)
+        .approve(await trustEngine.getAddress(), INITIAL_BALANCE);
+      await trustEngine
+        .connect(victim)
+        .deposit(await token.getAddress(), INITIAL_BALANCE);
     });
 
     it("Should prevent duplicate session locking", async function () {
       const sessionId = ethers.keccak256(ethers.toUtf8Bytes("dup-session"));
 
       // First lock (via authorized gateway)
-      await trustEngine.connect(gateway).lockForSession(
-        sessionId, victim.address, attacker.address, await token.getAddress(), ethers.parseEther("50")
-      );
+      await trustEngine
+        .connect(gateway)
+        .lockForSession(
+          sessionId,
+          victim.address,
+          attacker.address,
+          await token.getAddress(),
+          ethers.parseEther("50"),
+        );
 
       // Second lock with same ID
       await expect(
-        trustEngine.connect(gateway).lockForSession(
-          sessionId, victim.address, attacker.address, await token.getAddress(), ethers.parseEther("50")
-        )
+        trustEngine
+          .connect(gateway)
+          .lockForSession(
+            sessionId,
+            victim.address,
+            attacker.address,
+            await token.getAddress(),
+            ethers.parseEther("50"),
+          ),
       ).to.be.revertedWithCustomError(trustEngine, "SessionAlreadyExists");
     });
 
@@ -557,7 +624,7 @@ describe("TrustEngine Security Analysis", function () {
       const fakeSessionId = ethers.keccak256(ethers.toUtf8Bytes("fake"));
 
       await expect(
-        trustEngine.connect(gateway).unlockSession(fakeSessionId, 0)
+        trustEngine.connect(gateway).unlockSession(fakeSessionId, 0),
       ).to.be.revertedWithCustomError(trustEngine, "SessionNotFound");
     });
 
@@ -565,12 +632,20 @@ describe("TrustEngine Security Analysis", function () {
       const sessionId = ethers.keccak256(ethers.toUtf8Bytes("unlock-excess"));
       const lockedAmount = ethers.parseEther("100");
 
-      await trustEngine.connect(gateway).lockForSession(
-        sessionId, victim.address, attacker.address, await token.getAddress(), lockedAmount
-      );
+      await trustEngine
+        .connect(gateway)
+        .lockForSession(
+          sessionId,
+          victim.address,
+          attacker.address,
+          await token.getAddress(),
+          lockedAmount,
+        );
 
       await expect(
-        trustEngine.connect(gateway).unlockSession(sessionId, lockedAmount + 1n)
+        trustEngine
+          .connect(gateway)
+          .unlockSession(sessionId, lockedAmount + 1n),
       ).to.be.revertedWithCustomError(trustEngine, "UsedExceedsLocked");
     });
   });
