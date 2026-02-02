@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("TrustEngine Security Analysis", function () {
@@ -24,7 +24,10 @@ describe("TrustEngine Security Analysis", function () {
 
     // Deploy TrustEngine
     TrustEngine = await ethers.getContractFactory("TrustEngine");
-    trustEngine = await TrustEngine.deploy(owner.address);
+    trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+      kind: "uups",
+      initializer: "initialize",
+    });
     await trustEngine.waitForDeployment();
 
     // Deploy Mock Token
@@ -326,7 +329,15 @@ describe("TrustEngine Security Analysis", function () {
 
     it("Should prevent settlement without configured token", async function () {
       // Deploy fresh TrustEngine without token configured
-      const freshEngine = await TrustEngine.deploy(owner.address);
+      const freshEngine = await upgrades.deployProxy(
+        TrustEngine,
+        [owner.address],
+        {
+          kind: "uups",
+          initializer: "initialize",
+        },
+      );
+      await freshEngine.waitForDeployment();
       await freshEngine.setSolanaRelay(solanaRelay.address);
       // Note: NOT setting setSolanaSessionToken
 
@@ -564,4 +575,3 @@ describe("TrustEngine Security Analysis", function () {
     });
   });
 });
-

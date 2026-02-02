@@ -31,14 +31,25 @@ describe("EXTREME Stress Tests", function () {
 
         // Deploy TrustEngine
         const TrustEngine = await hre.ethers.getContractFactory("TrustEngine");
-        const trustEngine = await TrustEngine.deploy(owner.address);
+        const trustEngine = await hre.upgrades.deployProxy(
+            TrustEngine,
+            [owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await trustEngine.waitForDeployment();
 
         // Deploy GatewaySession
         const GatewaySession = await hre.ethers.getContractFactory("GatewaySession");
-        const gatewaySession = await GatewaySession.deploy(
-            await trustEngine.getAddress(),
-            owner.address
+        const gatewaySession = await hre.upgrades.deployProxy(
+            GatewaySession,
+            [await trustEngine.getAddress(), owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
         );
         await gatewaySession.waitForDeployment();
 

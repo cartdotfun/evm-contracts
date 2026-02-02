@@ -1,9 +1,10 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("IdentityRegistry", function () {
     let identityRegistry;
+    let stakingToken;
     let owner;
     let agent1;
     let agent2;
@@ -11,8 +12,21 @@ describe("IdentityRegistry", function () {
     beforeEach(async function () {
         [owner, agent1, agent2] = await ethers.getSigners();
 
-        const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-        identityRegistry = await IdentityRegistry.deploy(owner.address);
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        stakingToken = await MockERC20.deploy("CART", "CART");
+        await stakingToken.waitForDeployment();
+
+        const IdentityRegistry = await ethers.getContractFactory(
+            "IdentityRegistry"
+        );
+        identityRegistry = await upgrades.deployProxy(
+            IdentityRegistry,
+            [owner.address, await stakingToken.getAddress()],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await identityRegistry.waitForDeployment();
     });
 

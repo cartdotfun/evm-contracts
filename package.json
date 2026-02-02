@@ -38,5 +38,9 @@
         "hardhat": "^2.22.0",
         "solidity-coverage": "^0.8.17",
         "viem": "^2.21.0"
+    },
+    "dependencies": {
+        "@openzeppelin/contracts-upgradeable": "^5.4.0",
+        "@openzeppelin/hardhat-upgrades": "^3.9.1"
     }
 }

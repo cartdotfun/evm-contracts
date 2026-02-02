@@ -7,15 +7,17 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/ITrustEngine.sol";
 
 /**
  * @title TrustEngine
  * @dev Singleton Vault for M2M Economy. Handles internal accounting and atomic deals.
  */
-contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
+contract TrustEngine is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, ITrustEngine {
     using SafeERC20 for IERC20;
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -41,11 +43,28 @@ contract TrustEngine is ReentrancyGuard, Ownable, ITrustEngine {
     address public solanaRelay;
     address public solanaSessionToken;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Constructor
-    // ═══════════════════════════════════════════════════════════════════════
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
-    constructor(address _initialOwner) Ownable(_initialOwner) {}
+    /**
+     * @dev Initializes the contract.
+     * @param _initialOwner The address of the initial owner.
+     */
+    function initialize(address _initialOwner) public initializer {
+        __Ownable_init(_initialOwner);
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+    }
+
+    /**
+     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @param newImplementation Address of the new implementation.
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // ═══════════════════════════════════════════════════════════════════════
     // Admin Functions

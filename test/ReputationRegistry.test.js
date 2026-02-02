@@ -1,10 +1,11 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("ReputationRegistry", function () {
     let reputationRegistry;
     let identityRegistry;
+    let stakingToken;
     let owner;
     let agent1;
     let client1;
@@ -13,12 +14,35 @@ describe("ReputationRegistry", function () {
     beforeEach(async function () {
         [owner, agent1, client1] = await ethers.getSigners();
 
-        const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-        identityRegistry = await IdentityRegistry.deploy(owner.address);
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        stakingToken = await MockERC20.deploy("CART", "CART");
+        await stakingToken.waitForDeployment();
+
+        const IdentityRegistry = await ethers.getContractFactory(
+            "IdentityRegistry"
+        );
+        identityRegistry = await upgrades.deployProxy(
+            IdentityRegistry,
+            [owner.address, await stakingToken.getAddress()],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await identityRegistry.waitForDeployment();
 
-        const ReputationRegistry = await ethers.getContractFactory("ReputationRegistry");
-        reputationRegistry = await ReputationRegistry.deploy(await identityRegistry.getAddress(), owner.address);
+        const ReputationRegistry = await ethers.getContractFactory(
+            "ReputationRegistry"
+        );
+        reputationRegistry = await upgrades.deployProxy(
+            ReputationRegistry,
+            [await identityRegistry.getAddress(), owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                unsafeAllow: ["constructor"],
+            }
+        );
         await reputationRegistry.waitForDeployment();
 
         // Register agent1

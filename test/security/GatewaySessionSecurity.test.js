@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 /**
@@ -28,14 +28,21 @@ describe("GatewaySession Security Analysis", function () {
 
         // Deploy TrustEngine
         const TrustEngine = await ethers.getContractFactory("TrustEngine");
-        trustEngine = await TrustEngine.deploy(owner.address);
+        trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+            kind: "uups",
+            initializer: "initialize",
+        });
         await trustEngine.waitForDeployment();
 
         // Deploy GatewaySession
         const GatewaySession = await ethers.getContractFactory("GatewaySession");
-        gatewaySession = await GatewaySession.deploy(
-            await trustEngine.getAddress(),
-            owner.address
+        gatewaySession = await upgrades.deployProxy(
+            GatewaySession,
+            [await trustEngine.getAddress(), owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
         );
         await gatewaySession.waitForDeployment();
 
@@ -106,7 +113,7 @@ describe("GatewaySession Security Analysis", function () {
             // Attacker tries to record usage (only provider should be able to)
             await expect(
                 gatewaySession.connect(attacker).recordUsage(sessionId, parseUSDC(100))
-            ).to.be.revertedWith("Only provider can record usage");
+            ).to.be.revertedWith("Only provider or syncer can record usage");
         });
 
         it("should prevent provider from recording usage on other provider's session", async function () {
@@ -122,7 +129,7 @@ describe("GatewaySession Security Analysis", function () {
             // Other provider tries to record usage
             await expect(
                 gatewaySession.connect(otherProvider).recordUsage(sessionId, parseUSDC(50))
-            ).to.be.revertedWith("Only provider can record usage");
+            ).to.be.revertedWith("Only provider or syncer can record usage");
         });
 
         it("should prevent provider from inflating usage beyond deposit", async function () {

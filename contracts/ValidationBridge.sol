@@ -5,7 +5,9 @@
 
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./interfaces/IValidationBridge.sol";
 
 /**
@@ -16,7 +18,12 @@ import "./interfaces/IValidationBridge.sol";
  * Enables validators to record validation results on-chain,
  * with optional automatic fund release based on validation score.
  */
-contract ValidationBridge is Ownable, IValidationBridge {
+contract ValidationBridge is
+    Initializable,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    IValidationBridge
+{
     // ═══════════════════════════════════════════════════════════════════════
     // State Variables
     // ═══════════════════════════════════════════════════════════════════════
@@ -45,14 +52,24 @@ contract ValidationBridge is Ownable, IValidationBridge {
     // ERC-8004: validatorAddress => list of request hashes
     mapping(address => bytes32[]) public validatorRequests;
 
-    constructor(
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _trustEngine,
         address _identityRegistry,
         address _initialOwner
-    ) Ownable(_initialOwner) {
+    ) public initializer {
+        __Ownable_init(_initialOwner);
+        __UUPSUpgradeable_init();
         trustEngine = _trustEngine;
         identityRegistry = _identityRegistry;
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // ═══════════════════════════════════════════════════════════════════════
     // Core Functions

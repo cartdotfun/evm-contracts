@@ -1,27 +1,52 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("ReputationRegistry Interface Completeness", function () {
     let reputationRegistry;
     let owner;
     let identityRegistry;
+    let stakingToken;
 
     beforeEach(async function () {
         [owner] = await ethers.getSigners();
 
-        // Deploy IdentityRegistry
-        const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-        identityRegistry = await IdentityRegistry.deploy(owner.address);
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        stakingToken = await MockERC20.deploy("CART", "CART");
+        await stakingToken.waitForDeployment();
+
+        const IdentityRegistry = await ethers.getContractFactory(
+            "IdentityRegistry"
+        );
+        identityRegistry = await upgrades.deployProxy(
+            IdentityRegistry,
+            [owner.address, await stakingToken.getAddress()],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await identityRegistry.waitForDeployment();
 
-        // Deploy ReputationRegistry
-        const ReputationRegistry = await ethers.getContractFactory("ReputationRegistry");
-        const reputationRegistryContract = await ReputationRegistry.deploy(await identityRegistry.getAddress(), owner.address);
-        await reputationRegistryContract.waitForDeployment();
+        const ReputationRegistry = await ethers.getContractFactory(
+            "ReputationRegistry"
+        );
+        const reputationRegistryProxy = await upgrades.deployProxy(
+            ReputationRegistry,
+            [await identityRegistry.getAddress(), owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                unsafeAllow: ["constructor"],
+            }
+        );
+        await reputationRegistryProxy.waitForDeployment();
         
         // Get contract instance at the interface level
-        reputationRegistry = await ethers.getContractAt("IReputationRegistry", await reputationRegistryContract.getAddress());
+        reputationRegistry = await ethers.getContractAt(
+            "IReputationRegistry",
+            await reputationRegistryProxy.getAddress()
+        );
     });
 
     it("should get identityRegistry address from the interface", async function () {

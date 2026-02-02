@@ -1,6 +1,6 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("TrustEngine Protocol Fees", function () {
     let TrustEngine;
@@ -31,7 +31,10 @@ describe("TrustEngine Protocol Fees", function () {
 
         // Deploy TrustEngine
         TrustEngine = await ethers.getContractFactory("TrustEngine");
-        trustEngine = await TrustEngine.deploy(owner.address);
+        trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+            kind: "uups",
+            initializer: "initialize",
+        });
         await trustEngine.waitForDeployment();
 
         // Setup Fee

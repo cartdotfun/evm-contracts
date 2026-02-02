@@ -1,6 +1,6 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("ValidationBridge Interface Completeness", function () {
     let validationBridge;
@@ -8,27 +8,58 @@ describe("ValidationBridge Interface Completeness", function () {
     let trustEngine;
     let identityRegistry;
     let validationBridgeImpl;
+    let stakingToken;
 
     beforeEach(async function () {
         [owner] = await ethers.getSigners();
 
-        // Deploy IdentityRegistry
-        const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-        identityRegistry = await IdentityRegistry.deploy(owner.address);
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        stakingToken = await MockERC20.deploy("CART", "CART");
+        await stakingToken.waitForDeployment();
+
+        const IdentityRegistry = await ethers.getContractFactory(
+            "IdentityRegistry"
+        );
+        identityRegistry = await upgrades.deployProxy(
+            IdentityRegistry,
+            [owner.address, await stakingToken.getAddress()],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await identityRegistry.waitForDeployment();
 
-        // Deploy TrustEngine
         const TrustEngine = await ethers.getContractFactory("TrustEngine");
-        trustEngine = await TrustEngine.deploy(owner.address);
+        trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+            kind: "uups",
+            initializer: "initialize",
+        });
         await trustEngine.waitForDeployment();
 
-        // Deploy ValidationBridge
-        const ValidationBridge = await ethers.getContractFactory("ValidationBridge");
-        validationBridgeImpl = await ValidationBridge.deploy(await trustEngine.getAddress(), await identityRegistry.getAddress(), owner.address);
+        const ValidationBridge = await ethers.getContractFactory(
+            "ValidationBridge"
+        );
+        validationBridgeImpl = await upgrades.deployProxy(
+            ValidationBridge,
+            [
+                await trustEngine.getAddress(),
+                await identityRegistry.getAddress(),
+                owner.address,
+            ],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                unsafeAllow: ["constructor"],
+            }
+        );
         await validationBridgeImpl.waitForDeployment();
         
         // Get contract instance at the interface level
-        validationBridge = await ethers.getContractAt("IValidationBridge", await validationBridgeImpl.getAddress());
+        validationBridge = await ethers.getContractAt(
+            "IValidationBridge",
+            await validationBridgeImpl.getAddress()
+        );
     });
 
     it("should get trustEngine address from the interface", async function () {

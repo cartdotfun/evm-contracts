@@ -1,31 +1,34 @@
 // SPDX-License-Identifier: MIT
 // @author: Lloyd Faulk
 // @author: Opus 4.5
-// @version: 1.0.0
+// @version: 2.0.0 (Upgradeable)
 
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/IIdentityRegistry.sol";
 
 /**
  * @title IdentityRegistry
- * @dev ERC-8004 compliant Identity Registry for AI Agents
- *
- * Each agent receives a unique AgentID (ERC-721 NFT) that maps to:
- * - Their Ethereum address
- * - An off-chain registration file containing metadata about capabilities
- *
- * Supports on-chain metadata via getMetadata/setMetadata per ERC-8004 spec.
+ * @dev ERC-8004 compliant Identity Registry for AI Agents (Upgradeable)
+ * Includes Staking logic for Trust Score.
  */
 contract IdentityRegistry is
-    ERC721,
-    ERC721URIStorage,
-    Ownable,
+    Initializable,
+    ERC721Upgradeable,
+    ERC721URIStorageUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
     IIdentityRegistry
 {
+    using SafeERC20 for IERC20;
+
     // ═══════════════════════════════════════════════════════════════════════
     // State Variables
     // ═══════════════════════════════════════════════════════════════════════
@@ -41,44 +44,45 @@ contract IdentityRegistry is
     // ERC-8004: On-chain metadata storage (agentId => key => value)
     mapping(uint256 => mapping(string => bytes)) private _metadata;
 
-    constructor(
-        address _initialOwner
-    ) ERC721("Cart.fun Agent", "CART") Ownable(_initialOwner) {
-        _nextAgentId = 1; // Start from 1 (0 reserved for "not registered")
+    // Staking
+    IERC20 public stakingToken;
+    mapping(uint256 => uint256) public agentStakes;
+
+    // Events
+    event Staked(uint256 indexed agentId, uint256 amount);
+    event Unstaked(uint256 indexed agentId, uint256 amount);
+    event StakingTokenUpdated(address token);
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
+
+    function initialize(address _initialOwner, address _stakingToken) public initializer {
+        __ERC721_init("Cart.fun Agent", "CART");
+        __ERC721URIStorage_init();
+        __Ownable_init(_initialOwner);
+        __UUPSUpgradeable_init();
+
+        _nextAgentId = 1;
+        stakingToken = IERC20(_stakingToken);
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ═══════════════════════════════════════════════════════════════════════
     // Core Functions
     // ═══════════════════════════════════════════════════════════════════════
 
-    /**
-     * @dev Register a new agent. Mints an NFT to the caller.
-     * @param registrationUri URI pointing to off-chain Agent Card JSON
-     * @param registrationHash Hash commitment of the registration data (optional if using IPFS)
-     * @return agentId The newly minted agent ID
-     */
     function register(
         string calldata registrationUri,
         bytes32 registrationHash
     ) external returns (uint256 agentId) {
         require(bytes(registrationUri).length > 0, "Registration URI required");
-
         agentId = _registerAgent(msg.sender, registrationUri, registrationHash);
-
-        emit AgentRegistered(
-            agentId,
-            msg.sender,
-            registrationUri,
-            registrationHash
-        );
+        emit AgentRegistered(agentId, msg.sender, registrationUri, registrationHash);
     }
 
-    /**
-     * @dev Update an existing agent's registration data.
-     * @param agentId The agent ID to update
-     * @param registrationUri New URI pointing to updated Agent Card
-     * @param registrationHash New hash commitment
-     */
     function update(
         uint256 agentId,
         string calldata registrationUri,
@@ -96,13 +100,6 @@ contract IdentityRegistry is
         emit AgentUpdated(agentId, registrationUri, registrationHash);
     }
 
-    /**
-     * @dev Get agent details by ID
-     * @param agentId The agent ID to query
-     * @return owner The agent's owner address
-     * @return registrationUri The agent's registration URI
-     * @return registrationHash The registration hash commitment
-     */
     function getAgent(
         uint256 agentId
     )
@@ -120,69 +117,80 @@ contract IdentityRegistry is
         registrationHash = reg.registrationHash;
     }
 
-    /**
-     * @dev Get agent ID by owner address
-     * @param owner The address to query
-     * @return agentId The agent ID (0 if not registered)
-     */
     function getAgentByOwner(
         address owner
     ) external view returns (uint256 agentId) {
         return addressToAgentId[owner];
     }
 
-    /**
-     * @dev Check if an address is registered as an agent
-     * @param addr The address to check
-     * @return True if registered
-     */
     function isRegistered(address addr) external view returns (bool) {
         return addressToAgentId[addr] != 0;
     }
 
-    /**
-     * @dev Get total number of registered agents
-     * @return The count of registered agents
-     */
     function totalAgents() external view returns (uint256) {
         return _nextAgentId - 1;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ERC-8004 Registration Overloads
+    // Staking Functions
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev Register with tokenURI and metadata entries (ERC-8004 compliant)
-     * @param _tokenURI URI pointing to off-chain registration JSON
-     * @param metadata Array of key-value metadata entries
-     * @return agentId The newly minted agent ID
+     * @dev Stake CART tokens to increase Trust Score.
+     * @param agentId The agent ID to stake for.
+     * @param amount The amount of CART to stake.
      */
+    function stake(uint256 agentId, uint256 amount) external {
+        require(ownerOf(agentId) == msg.sender, "Not agent owner");
+        require(amount > 0, "Amount must be > 0");
+        require(address(stakingToken) != address(0), "Staking token not set");
+
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        agentStakes[agentId] += amount;
+
+        emit Staked(agentId, amount);
+    }
+
+    /**
+     * @dev Unstake CART tokens.
+     * @param agentId The agent ID to unstake from.
+     * @param amount The amount of CART to unstake.
+     */
+    function unstake(uint256 agentId, uint256 amount) external {
+        require(ownerOf(agentId) == msg.sender, "Not agent owner");
+        require(agentStakes[agentId] >= amount, "Insufficient stake");
+
+        agentStakes[agentId] -= amount;
+        stakingToken.safeTransfer(msg.sender, amount);
+
+        emit Unstaked(agentId, amount);
+    }
+
+    /**
+     * @dev Admin function to update the staking token.
+     * @param _token New token address.
+     */
+    function setStakingToken(address _token) external onlyOwner {
+        stakingToken = IERC20(_token);
+        emit StakingTokenUpdated(_token);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ERC-8004 Overloads
+    // ═══════════════════════════════════════════════════════════════════════
+
     function register(
         string calldata _tokenURI,
         MetadataEntry[] calldata metadata
     ) external returns (uint256 agentId) {
         agentId = _registerAgent(msg.sender, _tokenURI, bytes32(0));
-
-        // Set each metadata entry
         for (uint256 i = 0; i < metadata.length; i++) {
             _metadata[agentId][metadata[i].key] = metadata[i].value;
-            emit MetadataSet(
-                agentId,
-                metadata[i].key,
-                metadata[i].key,
-                metadata[i].value
-            );
+            emit MetadataSet(agentId, metadata[i].key, metadata[i].key, metadata[i].value);
         }
-
         emit Registered(agentId, _tokenURI, msg.sender);
     }
 
-    /**
-     * @dev Register with tokenURI only (ERC-8004 compliant)
-     * @param _tokenURI URI pointing to off-chain registration JSON
-     * @return agentId The newly minted agent ID
-     */
     function register(
         string calldata _tokenURI
     ) external returns (uint256 agentId) {
@@ -190,25 +198,11 @@ contract IdentityRegistry is
         emit Registered(agentId, _tokenURI, msg.sender);
     }
 
-    /**
-     * @dev Register without URI (can be added later with _setTokenURI)
-     * @return agentId The newly minted agent ID
-     */
     function register() external returns (uint256 agentId) {
         agentId = _registerAgent(msg.sender, "", bytes32(0));
         emit Registered(agentId, "", msg.sender);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ERC-8004 Metadata Functions
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /**
-     * @dev Get on-chain metadata for an agent
-     * @param agentId The agent ID
-     * @param key The metadata key
-     * @return value The metadata value
-     */
     function getMetadata(
         uint256 agentId,
         string calldata key
@@ -216,47 +210,28 @@ contract IdentityRegistry is
         return _metadata[agentId][key];
     }
 
-    /**
-     * @dev Set on-chain metadata for an agent (owner or operator only)
-     * @param agentId The agent ID
-     * @param key The metadata key
-     * @param value The metadata value to set
-     */
     function setMetadata(
         uint256 agentId,
         string calldata key,
         bytes calldata value
     ) external {
         require(
-            ownerOf(agentId) == msg.sender ||
-                _isAuthorized(ownerOf(agentId), msg.sender, agentId),
+            ownerOf(agentId) == msg.sender || _isAuthorized(ownerOf(agentId), msg.sender, agentId),
             "Not authorized"
         );
-
         _metadata[agentId][key] = value;
         emit MetadataSet(agentId, key, key, value);
     }
 
-    // Required overrides for ERC721URIStorage
-    function tokenURI(
-        uint256 tokenId
-    ) public view override(ERC721, ERC721URIStorage) returns (string memory) {
+    // Overrides
+    function tokenURI(uint256 tokenId) public view override(ERC721Upgradeable, ERC721URIStorageUpgradeable) returns (string memory) {
         return super.tokenURI(tokenId);
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override(ERC721, ERC721URIStorage) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721Upgradeable, ERC721URIStorageUpgradeable) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Internal Helper Functions
-    // ═══════════════════════════════════════════════════════════════════════
-
-    /**
-     * @dev Internal registration logic
-     */
     function _registerAgent(
         address registrant,
         string memory uri,

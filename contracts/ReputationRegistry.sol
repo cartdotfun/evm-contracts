@@ -5,7 +5,9 @@
 
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "./interfaces/IIdentityRegistry.sol";
@@ -20,7 +22,12 @@ import "./interfaces/IReputationRegistry.sol";
  * - Simple postFeedback (anyone can post)
  * - ERC-8004 giveFeedback (requires agent signature authorization)
  */
-contract ReputationRegistry is Ownable, IReputationRegistry {
+contract ReputationRegistry is
+    Initializable,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    IReputationRegistry
+{
     // ═══════════════════════════════════════════════════════════════════════
     // Structs
     // ═══════════════════════════════════════════════════════════════════════
@@ -92,12 +99,22 @@ contract ReputationRegistry is Ownable, IReputationRegistry {
     mapping(uint256 => mapping(address => mapping(uint64 => ERC8004Feedback)))
         private _feedbackByIndex;
 
-    constructor(
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _identityRegistry,
         address _initialOwner
-    ) Ownable(_initialOwner) {
+    ) public initializer {
+        __Ownable_init(_initialOwner);
+        __UUPSUpgradeable_init();
         identityRegistry = _identityRegistry;
     }
+
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     /**
      * @dev Get the identity registry address (ERC-8004 required)

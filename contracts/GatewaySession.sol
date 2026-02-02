@@ -5,8 +5,10 @@
 
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./interfaces/IGatewaySession.sol";
@@ -18,7 +20,7 @@ import "./interfaces/ITrustEngine.sol";
  *      Sessions allow agents to pre-fund API usage and settle in batches.
  *      Works with TrustEngine for balance management.
  */
-contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
+contract GatewaySession is Initializable, UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, IGatewaySession {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -54,12 +56,33 @@ contract GatewaySession is ReentrancyGuard, Ownable, IGatewaySession {
     // Enables automated sync without requiring provider private keys
     address public usageSyncer;
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initializes the contract.
+     * @param _trustEngine Address of the TrustEngine.
+     * @param _initialOwner Address of the initial owner.
+     */
+    function initialize(
         address _trustEngine,
         address _initialOwner
-    ) Ownable(_initialOwner) {
+    ) public initializer {
+        __Ownable_init(_initialOwner);
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
         trustEngine = ITrustEngine(_trustEngine);
     }
+
+    /**
+     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @param newImplementation Address of the new implementation.
+     */
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     // ═══════════════════════════════════════════════════════════════════════
     // Admin Functions

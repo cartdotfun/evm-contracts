@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 /**
@@ -25,14 +25,21 @@ describe("Edge Case Tests", function () {
 
         // Deploy TrustEngine
         const TrustEngine = await ethers.getContractFactory("TrustEngine");
-        trustEngine = await TrustEngine.deploy(owner.address);
+        trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+            kind: "uups",
+            initializer: "initialize",
+        });
         await trustEngine.waitForDeployment();
 
         // Deploy GatewaySession
         const GatewaySession = await ethers.getContractFactory("GatewaySession");
-        gatewaySession = await GatewaySession.deploy(
-            await trustEngine.getAddress(),
-            owner.address
+        gatewaySession = await upgrades.deployProxy(
+            GatewaySession,
+            [await trustEngine.getAddress(), owner.address],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
         );
         await gatewaySession.waitForDeployment();
 

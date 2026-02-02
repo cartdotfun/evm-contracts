@@ -1,11 +1,12 @@
 
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("ValidationBridge", function () {
     let validationBridge;
     let trustEngine;
     let identityRegistry;
+    let stakingToken;
     let owner;
     let validator1;
     let agent1;
@@ -14,19 +15,45 @@ describe("ValidationBridge", function () {
     beforeEach(async function () {
         [owner, validator1, agent1] = await ethers.getSigners();
 
-        const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-        identityRegistry = await IdentityRegistry.deploy(owner.address);
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        stakingToken = await MockERC20.deploy("CART", "CART");
+        await stakingToken.waitForDeployment();
+
+        const IdentityRegistry = await ethers.getContractFactory(
+            "IdentityRegistry"
+        );
+        identityRegistry = await upgrades.deployProxy(
+            IdentityRegistry,
+            [owner.address, await stakingToken.getAddress()],
+            {
+                kind: "uups",
+                initializer: "initialize",
+            }
+        );
         await identityRegistry.waitForDeployment();
 
         const TrustEngine = await ethers.getContractFactory("TrustEngine");
-        trustEngine = await TrustEngine.deploy(owner.address);
+        trustEngine = await upgrades.deployProxy(TrustEngine, [owner.address], {
+            kind: "uups",
+            initializer: "initialize",
+        });
         await trustEngine.waitForDeployment();
 
-        const ValidationBridge = await ethers.getContractFactory("ValidationBridge");
-        validationBridge = await ValidationBridge.deploy(
-            await trustEngine.getAddress(),
-            await identityRegistry.getAddress(),
-            owner.address
+        const ValidationBridge = await ethers.getContractFactory(
+            "ValidationBridge"
+        );
+        validationBridge = await upgrades.deployProxy(
+            ValidationBridge,
+            [
+                await trustEngine.getAddress(),
+                await identityRegistry.getAddress(),
+                owner.address,
+            ],
+            {
+                kind: "uups",
+                initializer: "initialize",
+                unsafeAllow: ["constructor"],
+            }
         );
         await validationBridge.waitForDeployment();
 
