@@ -1,9 +1,10 @@
 #!/usr/bin/env npx ts-node
 import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, Address } from 'viem'
-import { baseSepolia } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
 import { privateKeyToAccount } from 'viem/accounts'
 import * as dotenv from 'dotenv'
 import * as readline from 'readline'
+import { getNetworkFromEnv, readDeployment, requireDeployedAddress } from './lib/deployments'
 
 dotenv.config()
 
@@ -17,10 +18,13 @@ dotenv.config()
  * - Withdraw internal balance
  */
 
+const deployment = readDeployment(getNetworkFromEnv())
+const CHAIN = deployment.chainId === 8453 ? base : baseSepolia
+
 const CONTRACTS = {
-    TRUST_ENGINE: '0x1E43578CB0486a036dABcf5b9E31a037b6C27E96' as const,
-    GATEWAY_SESSION: '0x9e1C3f4c1E14C19cd854F592dE6b3442B5a6A329' as const,
-    USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const,
+    TRUST_ENGINE: requireDeployedAddress(deployment.contracts.trustEngine, 'TrustEngine'),
+    GATEWAY_SESSION: requireDeployedAddress(deployment.contracts.gatewaySession, 'GatewaySession'),
+    USDC: deployment.tokens.usdc,
 }
 
 const TRUST_ENGINE_ABI = [
@@ -63,16 +67,21 @@ class TrustEngineManager {
 
         this.account = privateKeyToAccount(privateKey.startsWith('0x') ? privateKey as `0x${string}` : `0x${privateKey}`)
 
-        const transport = http(process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org')
+        const rpcUrl =
+            process.env.RPC_URL ||
+            (deployment.chainId === 8453
+                ? process.env.BASE_RPC || 'https://mainnet.base.org'
+                : process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org')
+        const transport = http(rpcUrl)
 
         this.publicClient = createPublicClient({
-            chain: baseSepolia,
+            chain: CHAIN,
             transport,
         })
 
         this.walletClient = createWalletClient({
             account: this.account,
-            chain: baseSepolia,
+            chain: CHAIN,
             transport,
         })
 

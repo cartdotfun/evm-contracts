@@ -1,14 +1,18 @@
-import { ethers } from "hardhat";
+import hre from "hardhat";
+import { getNetworkFromHardhatName, readDeployment, requireDeployedAddress } from "./lib/deployments";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
+    const { ethers } = hre;
     const [deployer] = await ethers.getSigners();
     console.log(`Configuring TrustEngine with deployer: ${deployer.address}`);
 
-    const trustEngineAddress = "0xF449752828DA0EbE57d1987170E524cC37CeE92B";
-    const validationBridgeAddress = "0x3C2b41Cd84994705E59886659c661bE1c1562643";
-    const gatewaySessionAddress = "0x9D7D78DCF46413AF3846138C342Ea39Ce11F78B8";
+    const network = getNetworkFromHardhatName(hre.network.name);
+    const deployment = readDeployment(network);
+    const trustEngineAddress = requireDeployedAddress(deployment.contracts.trustEngine, "TrustEngine");
+    const validationBridgeAddress = requireDeployedAddress(deployment.contracts.validationBridge, "ValidationBridge");
+    const gatewaySessionAddress = requireDeployedAddress(deployment.contracts.gatewaySession, "GatewaySession");
 
     const TrustEngine = await ethers.getContractFactory("TrustEngine");
     const trustEngine = TrustEngine.attach(trustEngineAddress);

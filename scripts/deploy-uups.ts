@@ -1,11 +1,19 @@
 import "@nomicfoundation/hardhat-ethers";
 import "@openzeppelin/hardhat-upgrades";
 import hre from "hardhat";
+import {
+  getNetworkFromHardhatName,
+  readDeployment,
+  writeDeployment,
+} from "./lib/deployments";
 
 async function main() {
   const { ethers, upgrades } = hre;
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with the account:", deployer.address);
+
+  const network = getNetworkFromHardhatName(hre.network.name);
+  const existing = readDeployment(network);
 
   // 1. Deploy CartToken (Standard ERC20, not upgradeable)
   console.log("Deploying CartToken...");
@@ -128,6 +136,19 @@ async function main() {
   console.log("ValidationBridge:  ", validationBridgeAddress);
   console.log("GatewaySession:    ", gatewaySessionAddress);
   console.log("----------------------------------------------------");
+
+  writeDeployment(network, {
+    ...existing,
+    contracts: {
+      cartToken: cartTokenAddress as `0x${string}`,
+      identityRegistry: identityRegistryAddress as `0x${string}`,
+      trustEngine: trustEngineAddress as `0x${string}`,
+      reputationRegistry: reputationRegistryAddress as `0x${string}`,
+      validationBridge: validationBridgeAddress as `0x${string}`,
+      gatewaySession: gatewaySessionAddress as `0x${string}`,
+    },
+    tokens: existing.tokens,
+  });
 
   // Optional: Verify on Etherscan (if API key provided)
   // await hre.run("verify:verify", { address: cartTokenAddress, constructorArguments: [deployer.address] });

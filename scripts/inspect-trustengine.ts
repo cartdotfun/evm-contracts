@@ -1,6 +1,7 @@
 import { createPublicClient, http, formatUnits, Address } from 'viem'
-import { baseSepolia } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
 import * as dotenv from 'dotenv'
+import { getNetworkFromEnv, readDeployment, requireDeployedAddress } from './lib/deployments'
 
 dotenv.config()
 
@@ -13,10 +14,13 @@ dotenv.config()
  * - Recent events (deposits, withdrawals, settlements)
  */
 
+const deployment = readDeployment(getNetworkFromEnv())
+const CHAIN = deployment.chainId === 8453 ? base : baseSepolia
+
 const CONTRACTS = {
-    TRUST_ENGINE: '0x1E43578CB0486a036dABcf5b9E31a037b6C27E96' as const,
-    GATEWAY_SESSION: '0x9e1C3f4c1E14C19cd854F592dE6b3442B5a6A329' as const,
-    USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const,
+    TRUST_ENGINE: requireDeployedAddress(deployment.contracts.trustEngine, 'TrustEngine'),
+    GATEWAY_SESSION: requireDeployedAddress(deployment.contracts.gatewaySession, 'GatewaySession'),
+    USDC: deployment.tokens.usdc,
 }
 
 // Known addresses to check (add more as needed)
@@ -120,13 +124,18 @@ const PROTOCOL_FEE_COLLECTED_EVENT = {
 } as const
 
 async function main() {
+    const rpcUrl =
+        process.env.RPC_URL ||
+        (deployment.chainId === 8453
+            ? process.env.BASE_RPC || 'https://mainnet.base.org'
+            : process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org')
     const publicClient = createPublicClient({
-        chain: baseSepolia,
-        transport: http(process.env.BASE_SEPOLIA_RPC || 'https://sepolia.base.org'),
+        chain: CHAIN,
+        transport: http(rpcUrl),
     })
 
     console.log('═══════════════════════════════════════════════════════════════')
-    console.log('🔍 TrustEngine Inspector (Base Sepolia)')
+    console.log(`🔍 TrustEngine Inspector (${deployment.network})`)
     console.log('═══════════════════════════════════════════════════════════════')
     console.log(`  Contract: ${CONTRACTS.TRUST_ENGINE}`)
     console.log(`  USDC: ${CONTRACTS.USDC}`)
